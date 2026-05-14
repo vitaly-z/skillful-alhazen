@@ -1,0 +1,17 @@
+A technical diagram contrasting two approaches to modeling a person in a knowledge graph. Dark navy background (#070d1c). Two panels side by side, separated by a vertical divider. Flat line-art icons, teal/rust/olive accent colors, monospace labels. No long text. No code.
+
+LEFT PANEL — label "NAÏVE" in small-caps rust/red:
+A simple inheritance tree. At the top: a single node labeled "Person" (person silhouette icon). Three downward arrows from Person leading to three leaf nodes:
+  - "Author" (book icon)
+  - "Job-Hunter" (briefcase icon)
+  - "Contact" (handshake icon)
+The arrows are labeled "is-a". The three leaf nodes overlap visually, suggesting conflict — use a subtle warning glyph or collision indicator between them. The overall tone is flat and problematic.
+
+RIGHT PANEL — label "ROLE MODEL" in small-caps olive/green:
+A richer graph. One central node "Person" (person silhouette icon) with a teal border — rigid, stable. Three separate nodes arranged around it:
+  - "Author Role" (book icon, olive border)
+  - "Job-Hunter Role" (briefcase icon, olive border)
+  - "Contact Role" (handshake icon, olive border)
+Each role node connects to Person via a labeled relation arrow: "bears role". The role nodes are visually lighter/thinner than the Person node, indicating their anti-rigid nature. A small lifecycle indicator (start → end arc) appears on one role node.
+
+Overall aesthetic: dark terminal diagram style. Teal and olive for the correct model, rust for the naive model. Clean flat icons, short labels, labeled arrows. No photorealism. Same style as a dark-theme architecture reference diagram.

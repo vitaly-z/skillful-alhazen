@@ -1,0 +1,53 @@
+A technical architecture diagram showing how Claude authors GLAV mapping rules to transfer data between TypeDB schemas. Dark navy background (#070d1c). Bold, high-contrast style — thick box borders (3-4px), heavy arrows with large arrowheads, large bold sans-serif labels. No fills inside boxes. Teal (#4baDAD), olive (#b8c84a), blue (#5a7fa8), and off-white (#e8eef7) accents on thick bright strokes. All text is large, bold, and clearly legible at presentation resolution. 16:9 aspect ratio.
+
+Layout: two horizontal rows (A and B), each showing a distinct mapping scenario. Claude Code appears in the centre shared between both rows as the rule-authoring agent.
+
+ROW A — label "A · EXTERNAL INTEGRATION" in small-caps blue, left margin:
+
+Left box (blue outline) — label "EXTERNAL SOURCE"
+  Icon: database cylinder outline
+  Sub-labels (stacked):
+    LinkML schema
+    DisMech · Monarch · ChEMBL
+
+Arrow → Centre-left box (faint outline) — label "STAGING"
+  Icon: database cylinder outline
+  Sub-label: "local TypeDB copy"
+  Note below arrow: "LinkML → TypeDB"
+
+Arrow → [Claude box — shared, see centre]
+
+Arrow → Right box (teal outline) — label "ALHAZEN NOTEBOOK"
+  Icon: database cylinder outline (teal)
+  Sub-label: "global schema"
+  Sub-label: "alh-domain-thing · artifact · note"
+
+ROW B — label "B · SCHEMA MIGRATION" in small-caps olive, left margin:
+
+Left box (olive outline) — label "OLD SCHEMA"
+  Icon: database cylinder outline
+  Sub-label: "alhazen_notebook v1"
+
+Arrow → [Claude box — shared, see centre]
+
+Arrow → Right box (teal outline, same as Row A right) — label "ALHAZEN NOTEBOOK"
+  Sub-label: "alhazen_notebook v2"
+  (same box as row A — the target is always the notebook)
+
+CENTRE — Claude Code box shared between both rows:
+  A tall thick-bordered box (teal border, 3-4px stroke) positioned between the source and target of both rows.
+  Icon: Anthropic asterisk/star outline at top
+  Label: "CLAUDE CODE" in small-caps teal
+  Inside, three stacked items:
+    [schema icon] reads source schema
+    [data icon]   inspects sample data
+    [YAML icon]   authors mapping rules
+  Below those: a small YAML snippet outline (just the box shape, 3-4 lines, no readable text needed)
+  Sub-label at bottom: "GLAV rules — source match → target insert"
+
+A thick curved arrow from the ALHAZEN NOTEBOOK box (right) back to the Claude box, labeled "schema gap → revise rules" in bold italic olive.
+
+FOOTER — a single line of italic off-white text at the bottom:
+"Fagin, Kolaitis, Miller, Popa — Data Exchange: Semantics and Query Answering (2005)"
+
+Overall: dark terminal diagram style. Thick bright strokes (3-4px) on all box borders and arrows. No filled shapes, no gradients. Large bold arrowheads. All label text is large (16-20pt equivalent), bold, and highly legible — prioritise readability at distance. Blue for external integration row, olive for migration row, teal for Claude and the target notebook.

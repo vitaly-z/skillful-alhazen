@@ -1,0 +1,60 @@
+A technical flowchart diagram. Dark navy background (#070d1c). Wireframe style — all boxes and icons are thin outlines only, no fills. Thin arrows with small arrowheads. Color palette: teal (#4baDAD), olive (#b8c84a), off-white (#e8eef7) only. Monospace labels. 16:9 aspect ratio.
+
+Layout: left zone shows three trigger sources; right zone shows the audit flowchart as a vertical sequence. A single horizontal arrow connects the two zones.
+
+LEFT ZONE — label "TRIGGERS" in small-caps off-white, top-left:
+Three stacked thin-bordered rectangular boxes (outline only, no fill). Each has a line-art icon on the left and a two-line label on the right.
+
+Box 1 — label "EXECUTION FAILURE" in small-caps off-white
+  Icon: warning triangle outline
+  Sub-label: "crash · timeout · empty result"
+
+Box 2 — label "SCHEMA GAP" in small-caps teal
+  Icon: database cylinder outline with a crack
+  Sub-label: "concept has no type"
+
+Box 3 — label "USER REQUEST" in small-caps olive
+  Icon: person silhouette outline with a plus sign
+  Sub-label: "new feature · model extension"
+
+A single converging thin arrow from all three boxes pointing right, labeled "detected" in small italic off-white.
+
+RIGHT ZONE — label "AUDIT PROCESS" in small-caps olive, top-right:
+A vertical flowchart with seven steps connected by downward thin arrows. Each step is a thin-bordered rounded rectangle (outline only). Icons are line-art outlines.
+
+Step 1 — icon: magnifying glass — label "Run Audit"
+  Sub-label: "quality-checks.yaml"
+
+↓ thin arrow
+
+Step 2 — icon: GitHub octocat outline — label "File Issue" (teal border on this box)
+  Sub-label: "finding · root cause · prevention fix"
+
+↓ thin arrow
+
+Step 3 — icon: document with lines — label "Plan Fix"
+  Sub-label: "implementation plan on issue"
+
+↓ thin arrow
+
+Step 4 — icon: Anthropic asterisk/star outline — label "Implement" (teal border on this box)
+  Sub-label: "Claude Code — schema · code · prompt"
+
+↓ thin arrow
+
+Step 5 — icon: checkmark circle outline — label "Verify"
+  Sub-label: "re-run audit — finding disappears"
+
+↓ thin arrow
+
+Step 6 — icon: git branch fork outline — label "Pull Request"
+  Sub-label: "before / after comparison"
+
+↓ thin arrow
+
+Step 7 — icon: merge/tick — label "Merge & Close" (olive border on this box)
+  Sub-label: "issue auto-closes"
+
+A thin curved return arrow from Step 7 looping back to Step 1, labeled "next gap" in small italic off-white, suggesting the process is continuous.
+
+Overall aesthetic: dark terminal diagram. Wireframe outlines only. Teal highlights on Claude Code and file-issue steps. Olive highlights on trigger labels and final merge step. No filled shapes, no gradients, no heavy arrows.

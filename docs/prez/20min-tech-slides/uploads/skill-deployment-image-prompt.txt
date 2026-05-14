@@ -1,41 +1,35 @@
-A technical architecture diagram in the style of a dark-theme code editor. Dark navy background (#070d1c). Teal/cyan bordered boxes with small-caps labels, monospace font, minimal flat icons, labeled arrows between components. 16:9 aspect ratio, suitable for a presentation slide.
+A technical architecture diagram. Dark navy background (#070d1c). Teal/cyan bordered boxes with small-caps labels, flat line-art icons, labeled arrows. No code. No bullet text. Icons and short labels only. 16:9 aspect ratio.
 
-Layout: three horizontal rows, reading top to bottom.
+Layout: two rows.
 
-TOP ROW — label "SKILL REGISTRY":
-A single wide box containing two items side by side:
-- Left: a git branch icon + "github.com/sciknow-io/jobhunt" (an external skill repo URL in monospace)
-- Right: a YAML file icon + "skills-registry.yaml" with text "git: url / path: local"
-A downward arrow from this box labeled "make build-skills"
+TOP ROW — a single wide box labeled "SKILL PACKAGE" with a teal border and a subtle package/box icon in the corner.
+Inside, four icon-and-label pairs arranged horizontally with equal spacing:
 
-MIDDLE ROW — label "LOCAL RUNTIME" — three boxes side by side connected by horizontal arrows:
+  [document icon]       [database schema icon]    [terminal/script icon]    [browser window icon]
+    SKILL.md              SCHEMA  (.tql)              SCRIPTS                  DASHBOARD
 
-Box 1 (teal border) — label "CLAUDE CODE":
-- Anthropic star logo (flat white asterisk/spark icon)
-- Text: "natural language interface"
-- Bullet: "· skill CLI mounted"
-- Bullet: "· SKILL.md loaded"
+Each icon is a clean flat line-art glyph. A dotted border wraps all four, visually grouping them as a single deployable unit.
 
-Arrow pointing right labeled "TypeQL writes"
+A downward arrow from this box with the label "make build-skills" and a small gear/cog icon beside it.
 
-Box 2 (blue border) — label "TYPEDB [DOCKER]":
-- Docker whale flat icon
-- Text: "notebook database"
-- Bullet: "· schema loaded"
-- Bullet: "· runs locally"
-- Bullet: "· zero cloud dependency"
+BOTTOM ROW — three boxes side by side, connected by horizontal arrows:
 
-Arrow pointing right labeled "live query"
+Box 1 (teal border) — label "CLAUDE CODE"
+  Large flat asterisk/spark icon (Anthropic logo style) centered in the box.
+  Small label beneath: "agent interface"
 
-Box 3 (olive border) — label "DASHBOARD":
-- Browser/window flat icon
-- Text: "Next.js UI"
-- Bullet: "· typed entities"
-- Bullet: "· rendered live"
-- Bullet: "· skill contributes components"
+Horizontal arrow pointing right → labeled "TypeQL"
 
-BOTTOM ROW — a single teal-tinted callout box:
-Text: "git clone → register → make build-skills → done."
-Monospace font, subtle teal glow.
+Box 2 (blue border) — label "TYPEDB"
+  Docker whale flat icon centered, with a small cylinder (database) icon stacked below it.
+  Small label beneath: "local notebook"
 
-Overall aesthetic: matches a dark terminal / architecture diagram. Same style as the reference: teal borders on boxes, small-caps layer labels, monospace bullet text, flat line-art icons, downward and rightward labeled arrows. No gradients, no photorealism.
+Horizontal arrow pointing right → labeled "live query"
+
+Box 3 (olive/yellow-green border) — label "DASHBOARD"
+  Flat browser/monitor icon centered, with a small bar-chart icon inside the screen area.
+  Small label beneath: "visual explorer"
+
+Dashed curved arrows connect Box 1 and Box 3 back up to the SKILL PACKAGE box at the top, indicating that SKILL.md drives Claude and the dashboard component drives the UI.
+
+Overall aesthetic: matches a dark terminal / architecture diagram. Teal borders, small-caps labels, flat icons only, clean connecting arrows. No code snippets, no bullet lists, no long text.
