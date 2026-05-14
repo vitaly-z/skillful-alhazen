@@ -4,7 +4,6 @@ defaults:
 skills:
 - name: agentic-memory
   path: skills/agentic-memory
-  core_os: true
   dashboard:
     enabled: true
     name: Alhazen Notebook
@@ -15,7 +14,6 @@ skills:
     color: teal
 - name: typedb-notebook
   path: skills/typedb-notebook
-  core_os: true
 - name: web-search
   path: skills/web-search
 - name: curation-skill-builder
@@ -103,6 +101,10 @@ schema_map:
     sltrend:
       skill: literature-trends
       schema: local_skills/literature-trends/schema.tql
+      depends_on: []
+    scilit:
+      skill: scientific-literature
+      schema: local_skills/scientific-literature/schema.tql
       depends_on: []
     trec:
       skill: tech-recon

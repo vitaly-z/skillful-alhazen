@@ -137,3 +137,19 @@ make db-init                # Step 2: reload schemas (destructive!)
 ### External Skill Fixes Must Go Upstream
 
 External skills (`jobhunt`, `dismech-notebook` etc.) are cloned from other repositories (`https://github.com/sciknow-io/alhazen-skill-examples`, `https://github.com/sciknow-io/alhazen-skill-dismech`). Fixes in `local_skills/` get overwritten by `make skills-update` (which is very, very, very bad). ALWAYS push fixes upstream first. See [`docs/conventions.md`](docs/conventions.md) for details.
+
+### Dashboard Files: NEVER Edit in dashboard/src/ Directly
+
+**`dashboard/src/components/`, `dashboard/src/lib/`, `dashboard/src/app/(skill)/`, `dashboard/src/app/api/skill/` are GENERATED copies.** They get overwritten by `make build-dashboard`.
+
+The source of truth for each skill's dashboard is `skills/{name}/dashboard/` (for core skills) or `local_skills/{name}/dashboard/` (for external skills), with 4 slots:
+
+```
+skills/{name}/dashboard/
+  components/   -> dashboard/src/components/{name}/
+  lib.ts        -> dashboard/src/lib/{name}.ts
+  pages/        -> dashboard/src/app/({name})/
+  routes/       -> dashboard/src/app/api/{name}/
+```
+
+**To edit dashboard code:** Edit in `skills/{name}/dashboard/` (or the upstream git repo for external skills), then run `make build-dashboard` to propagate. NEVER edit the copies in `dashboard/src/` — they will be silently overwritten on next build.

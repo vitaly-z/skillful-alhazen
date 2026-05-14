@@ -32,6 +32,11 @@
     "color": "blue",
     "skill": "literature-trends"
   },
+  "scilit": {
+    "badge": "SKILL",
+    "color": "blue",
+    "skill": "scientific-literature"
+  },
   "trec": {
     "badge": "SKILL",
     "color": "blue",
