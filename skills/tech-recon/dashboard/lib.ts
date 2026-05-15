@@ -85,6 +85,10 @@ export interface TechReconAnalysis {
   plot_code?: string;
   query?: string;
   description?: string;
+  pipeline_script?: string;
+  pipeline_script_preview?: string;
+  pipeline_script_chars?: number;
+  pipeline_config?: string;
 }
 
 // Exported API functions

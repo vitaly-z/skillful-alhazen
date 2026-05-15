@@ -7,6 +7,93 @@ import { Icon, BackNav, Panel } from '@/components/tech-recon/atoms';
 import { AnalysisRunner } from '@/components/tech-recon/analysis-runner';
 import type { TechReconAnalysis } from '@/lib/tech-recon';
 
+function CodeBlock({ title, code, language }: { title: string; code: string; language?: string }) {
+  const [open, setOpen] = useState(false);
+  const unescaped = code.replace(/\\n/g, '\n');
+  const lines = unescaped.split('\n');
+  const lineCount = lines.length;
+  const charCount = code.length;
+  const isLarge = charCount > 10000;
+  const displayCode = open
+    ? (isLarge ? unescaped.slice(0, 10000) : unescaped)
+    : lines.slice(0, 3).join('\n');
+
+  const sizeLabel = charCount > 100000
+    ? `${(charCount / 1000).toFixed(0)}K chars`
+    : `${lineCount} lines`;
+
+  return (
+    <div style={{ marginTop: 20, paddingTop: 20, borderTop: `1px solid ${T.borderDim}` }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          background: 'transparent', border: 'none', cursor: 'pointer',
+          color: T.fgDim, fontFamily: T.mono, fontSize: 10.5, fontWeight: 600,
+          textTransform: 'uppercase', letterSpacing: '1px', padding: 0, marginBottom: 12,
+        }}
+      >
+        <Icon name={open ? 'chevron-down' : 'chevron-right'} size={12} color={T.fgFaint} />
+        {title}
+        <span style={{
+          fontWeight: 400, fontSize: 10, color: T.fgFaint,
+          textTransform: 'none', letterSpacing: '0',
+        }}>
+          {language && `${language} · `}{sizeLabel}
+        </span>
+      </button>
+      <pre style={{
+        fontFamily: T.mono, fontSize: 12, background: T.bgSunken,
+        border: `1px solid ${T.borderDim}`, borderRadius: 4,
+        padding: 16, overflowX: 'auto', color: T.fg,
+        maxHeight: open ? '600px' : '4.5em',
+        overflow: open ? 'auto' : 'hidden',
+        position: 'relative',
+      }}>
+        <code>{displayCode}</code>
+        {!open && lineCount > 3 && (
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0, height: 32,
+            background: `linear-gradient(transparent, ${T.bgSunken})`,
+          }} />
+        )}
+      </pre>
+      {open && isLarge && (
+        <p style={{ fontSize: 11, color: T.fgFaint, fontStyle: 'italic', marginTop: 6 }}>
+          Showing first 10K of {(charCount / 1000).toFixed(0)}K chars (contains embedded data)
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SourceCodeSections({ analysis }: { analysis: TechReconAnalysis }) {
+  const sections: { title: string; code: string; language: string }[] = [];
+
+  if (analysis.query) {
+    sections.push({ title: 'TypeQL Query', code: analysis.query, language: 'typeql' });
+  }
+  if (analysis.plot_code) {
+    sections.push({ title: 'Observable Plot Code', code: analysis.plot_code, language: 'javascript' });
+  }
+  if (analysis.pipeline_script) {
+    sections.push({ title: 'Pipeline Script', code: analysis.pipeline_script, language: 'python' });
+  }
+  if (analysis.pipeline_config) {
+    sections.push({ title: 'Pipeline Config', code: analysis.pipeline_config, language: 'json' });
+  }
+
+  if (sections.length === 0) return null;
+
+  return (
+    <>
+      {sections.map(s => (
+        <CodeBlock key={s.title} title={s.title} code={s.code} language={s.language} />
+      ))}
+    </>
+  );
+}
+
 export default function AnalysisPage({ params }: { params: Promise<{ id: string; aid: string }> }) {
   const { id, aid } = use(params);
   const [analysis, setAnalysis] = useState<TechReconAnalysis | null>(null);
@@ -81,7 +168,7 @@ export default function AnalysisPage({ params }: { params: Promise<{ id: string;
             )}
           </div>
 
-          {analysis.description && (
+          {analysis.description && !analysis.description.trimStart().startsWith('[') && !analysis.description.trimStart().startsWith('{') && (
             <p style={{ fontSize: 13.5, lineHeight: 1.55, color: T.fgDim, maxWidth: 640, margin: 0 }}>
               {analysis.description}
             </p>
@@ -98,19 +185,7 @@ export default function AnalysisPage({ params }: { params: Promise<{ id: string;
             analysisType={analysis.type || 'plot'}
           />
 
-          {analysis.query && (
-            <div style={{ marginTop: 20, paddingTop: 20, borderTop: `1px solid ${T.borderDim}` }}>
-              <h2 style={{
-                fontFamily: T.mono, fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase',
-                letterSpacing: '1px', color: T.fgDim, marginBottom: 12,
-              }}>Query</h2>
-              <pre style={{
-                fontFamily: T.mono, fontSize: 12, background: T.bgSunken,
-                border: `1px solid ${T.borderDim}`, borderRadius: 4,
-                padding: 16, overflowX: 'auto', color: T.fg,
-              }}><code>{analysis.query}</code></pre>
-            </div>
-          )}
+          <SourceCodeSections analysis={analysis} />
         </Panel>
       </main>
 

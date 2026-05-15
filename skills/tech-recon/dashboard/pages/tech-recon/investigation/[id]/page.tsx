@@ -754,9 +754,9 @@ export default function InvestigationPage({ params }: { params: Promise<{ id: st
             </div>
 
             {investigation.goal && (
-              <p style={{ fontSize: 13.5, lineHeight: 1.55, color: T.fgDim, maxWidth: 640, margin: '0 0 12px' }}>
-                {investigation.goal}
-              </p>
+              <div style={{ maxWidth: 640, margin: '0 0 12px' }}>
+                <MarkdownContent content={investigation.goal} />
+              </div>
             )}
 
             <div style={{
