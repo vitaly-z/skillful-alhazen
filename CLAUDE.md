@@ -153,3 +153,17 @@ skills/{name}/dashboard/
 ```
 
 **To edit dashboard code:** Edit in `skills/{name}/dashboard/` (or the upstream git repo for external skills), then run `make build-dashboard` to propagate. NEVER edit the copies in `dashboard/src/` — they will be silently overwritten on next build.
+
+### Playwright Screenshots Go in the Cache
+
+When using Playwright MCP tools to take screenshots during testing, **always save them to `~/.alhazen/cache/screenshots/`**, not the project root. Screenshots left in the project root pollute `git status` and risk being committed.
+
+```bash
+# Good — save to cache
+mcp__playwright__browser_take_screenshot(filename="~/.alhazen/cache/screenshots/my-test.png")
+
+# Bad — pollutes project root
+mcp__playwright__browser_take_screenshot(filename="my-test.png")
+```
+
+The cache directory is `~/.alhazen/cache/screenshots/` — create it if it doesn't exist.
