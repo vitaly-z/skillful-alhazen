@@ -2,6 +2,8 @@ defaults:
   git: https://github.com/sciknow-io/alhazen-skill-examples
   ref: main
 skills:
+- name: alhazen-core
+  subdir: skills/core/alhazen-core
 - name: agentic-memory
   path: skills/agentic-memory
   dashboard:

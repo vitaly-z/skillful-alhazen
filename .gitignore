@@ -1,6 +1,9 @@
 _proc/
 .worktrees/
 .superpowers/
+.codex/
+.next/
+test-results/
 
 *.bak
 .gitattributes

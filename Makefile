@@ -217,7 +217,11 @@ db-stop: ## Stop TypeDB container
 .PHONY: db-init
 db-init: ## Create database and load schemas
 	@echo "$(BLUE)Initializing TypeDB database '$(TYPEDB_DATABASE)'...$(NC)"
-	@SCHEMAS="$(TYPEDB_SCHEMAS_DIR)/alhazen_notebook.tql"; \
+	@CORE_SCHEMA="$(LOCAL_SKILLS_DIR)/alhazen-core/alhazen_notebook.tql"; \
+	if [ ! -f "$$CORE_SCHEMA" ]; then \
+		CORE_SCHEMA="$(TYPEDB_SCHEMAS_DIR)/alhazen_notebook.tql"; \
+	fi; \
+	SCHEMAS="$$CORE_SCHEMA"; \
 	SCHEMAS_LATE=""; \
 	if [ -d "$(LOCAL_SKILLS_DIR)" ]; then \
 		for skill_dir in $(LOCAL_SKILLS_DIR)/*/; do \
