@@ -22,15 +22,8 @@ COPY --from=dashboard-src /src/dashboard/package*.json ./
 RUN ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
 COPY --from=dashboard-src /src/dashboard/ ./
 
-# Wire agentic-memory dashboard (core infrastructure — always included)
-# It's the knowledge graph browser that ships with every alhazen-core install.
-COPY --from=dashboard-src /src/skills/agentic-memory/dashboard/components/ ./src/components/agentic-memory/
-COPY --from=dashboard-src /src/skills/agentic-memory/dashboard/pages/ ./src/app/(agentic-memory)/
-COPY --from=dashboard-src /src/skills/agentic-memory/dashboard/routes/ ./src/app/api/agentic-memory/
-COPY --from=dashboard-src /src/skills/agentic-memory/dashboard/lib.ts ./src/lib/agentic-memory.ts
-
-# Skills config — just agentic-memory in the base image
-RUN echo '[{"slug":"agentic-memory","enabled":true,"name":"Alhazen Notebook","description":"Browse the knowledge graph","url_path":"/agentic-memory","icon":"Brain","color":"teal"}]' > public/skills-config.json
+# No skill dashboards baked in — all arrive via wire-dashboard + rebuild-dashboard
+RUN echo '[]' > public/skills-config.json
 RUN echo '[]' > public/skills-config.json
 RUN echo '{}' > public/namespace-config.json
 

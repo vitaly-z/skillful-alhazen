@@ -17,6 +17,14 @@
       "keywords": ["typedb", "infrastructure", "setup"]
     },
     {
+      "name": "agentic-memory",
+      "source": "./skills/agentic-memory",
+      "description": "TypeDB-backed knowledge graph memory — schema browser, entity explorer, session episodes, memory claims",
+      "version": "0.1.0",
+      "license": "Apache-2.0",
+      "keywords": ["typedb", "knowledge-graph", "memory", "agentic"]
+    },
+    {
       "name": "typedb-notebook",
       "source": "./skills/typedb-notebook",
       "description": "Store and retrieve knowledge in the Alhazen TypeDB knowledge graph — remember, recall, organize notes and collections",
