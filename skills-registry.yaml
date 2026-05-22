@@ -3,7 +3,7 @@ defaults:
   ref: main
 skills:
 - name: alhazen-core
-  subdir: skills/core/alhazen-core
+  path: skills/alhazen-core
 - name: agentic-memory
   path: skills/agentic-memory
   dashboard:
