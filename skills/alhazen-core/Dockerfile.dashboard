@@ -14,27 +14,26 @@ ARG REPO=https://github.com/sciknow-io/skillful-alhazen.git
 ARG REF=main
 RUN git clone --depth=1 --branch $REF $REPO /src
 
-# Stage 2: Node.js build (hub page only — no skill pages yet)
-FROM node:20-slim AS builder
+# Stage 2: Node.js — install deps only, NO build
+# Build happens later via `alhazen_core.py rebuild-dashboard` after skills are wired in.
+FROM node:20-slim AS deps
 WORKDIR /app
 COPY --from=dashboard-src /src/dashboard/package*.json ./
 RUN ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
 COPY --from=dashboard-src /src/dashboard/ ./
 
-# Strip skill-specific pages/components/routes/libs — they'll be wired in later
-# via alhazen_core.py wire-dashboard. Without this, the build fails on missing imports.
+# Strip ALL skill-specific pages/components/routes/libs — they arrive later
+# via wire-dashboard. Without this, the source tree has broken imports.
 RUN find src/app -maxdepth 1 -name '(*' -type d -exec rm -rf {} + 2>/dev/null || true
 RUN find src/app/api -maxdepth 1 -mindepth 1 -not -name 'typedb-status' -exec rm -rf {} + 2>/dev/null || true
 RUN find src/components -maxdepth 1 -mindepth 1 -not -name 'ui' -exec rm -rf {} + 2>/dev/null || true
 RUN find src/lib -maxdepth 1 -name '*.ts' -not -name 'utils.ts' -exec rm -f {} + 2>/dev/null || true
 
-# Empty skills-config.json — no skills wired yet
+# Empty configs — no skills wired yet
 RUN echo '[]' > public/skills-config.json
-# Empty namespace-config.json
 RUN echo '{}' > public/namespace-config.json
-RUN npm run build
 
-# Stage 3: Runtime (Node.js + Python + uv for skill CLI execution)
+# Stage 3: Runtime (Node.js + Python + uv)
 FROM python:3.11-slim AS runner
 
 # Install Node.js and curl
@@ -50,23 +49,13 @@ ENV PATH="/root/.local/bin:$PATH"
 
 WORKDIR /app
 
-# Copy the built Next.js app
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
-
-# Keep source files for rebuilds when skills are wired in later
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/next.config.ts ./
-COPY --from=builder /app/tsconfig.json ./
-COPY --from=builder /app/postcss.config.mjs ./
+# Copy source + node_modules (NOT a built .next — build happens after wiring)
+COPY --from=deps /app/ ./
 
 # Create directories for skill wiring
 RUN mkdir -p .claude/skills
 
 # Environment
-ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV TYPEDB_HOST=typedb
 ENV TYPEDB_PORT=1729
@@ -76,4 +65,6 @@ ENV HOSTNAME="0.0.0.0"
 
 EXPOSE 3000
 
-CMD ["npm", "start"]
+# Start with a placeholder that waits for rebuild-dashboard to produce .next/
+# After rebuild-dashboard runs, the container restarts with the built app.
+CMD ["sh", "-c", "if [ -d .next ]; then npm start; else echo 'Dashboard not yet built. Run: alhazen_core.py rebuild-dashboard' && sleep infinity; fi"]
