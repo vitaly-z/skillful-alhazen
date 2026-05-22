@@ -37,12 +37,16 @@ services:
     depends_on:
       typedb:
         condition: service_healthy
+        required: false
     ports:
       - "127.0.0.1:3001:3000"
     environment:
-      - TYPEDB_HOST=typedb
-      - TYPEDB_PORT=1729
-      - TYPEDB_DATABASE=alhazen_notebook
+      - TYPEDB_HOST=${TYPEDB_HOST:-typedb}
+      - TYPEDB_PORT=${TYPEDB_PORT:-1729}
+      - TYPEDB_DATABASE=${TYPEDB_DATABASE:-alhazen_notebook}
+      - PROJECT_ROOT=/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
     networks:
       - alhazen-network

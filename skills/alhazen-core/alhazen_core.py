@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Alhazen Core — TypeDB infrastructure setup for Alhazen skills.
+Alhazen Core — TypeDB + Dashboard infrastructure setup for Alhazen skills.
 
-Starts the TypeDB Docker container, creates the database, and loads the base schema.
-Run this once before installing any other Alhazen skill.
+Starts TypeDB and the dashboard via Docker Compose, creates the database,
+and loads the base schema. Run this once before installing any other Alhazen skill.
 
 Usage:
     python alhazen_core.py init                        # Start TypeDB + dashboard, create DB, load base schema
@@ -11,7 +11,7 @@ Usage:
     python alhazen_core.py wire-dashboard ...           # Copy a skill's dashboard files into the dashboard container
     python alhazen_core.py rebuild-dashboard            # Rebuild Next.js inside the dashboard container
     python alhazen_core.py dashboard-status             # Show which skills are wired into the dashboard
-    python alhazen_core.py status                       # Check TypeDB container and database state
+    python alhazen_core.py status                       # Check TypeDB + dashboard container state
     python alhazen_core.py reset                        # Drop and recreate the database (WARNING: destroys data)
 
 Environment:
@@ -45,9 +45,19 @@ COMPOSE_PROJECT = "alhazen"
 SCHEMA_FILE = Path(__file__).parent / "alhazen_notebook.tql"
 
 
+# =============================================================================
+# Docker helpers
+# =============================================================================
+
 def _docker(*args, check=True, capture=True):
     """Run a docker command, return CompletedProcess."""
     cmd = ["docker"] + list(args)
+    return subprocess.run(cmd, capture_output=capture, text=True, check=check)
+
+
+def _compose(*args, check=True, capture=True):
+    """Run a docker compose command using our compose file."""
+    cmd = ["docker", "compose", "-f", str(COMPOSE_FILE), "-p", COMPOSE_PROJECT] + list(args)
     return subprocess.run(cmd, capture_output=capture, text=True, check=check)
 
 
@@ -60,7 +70,7 @@ def _is_docker_running():
 
 
 def _container_status():
-    """Return container status string or '' if not found."""
+    """Return TypeDB container status string or '' if not found."""
     try:
         r = _docker("inspect", "--format", "{{.State.Status}}", TYPEDB_CONTAINER)
         return r.stdout.strip()
@@ -68,24 +78,43 @@ def _container_status():
         return ""
 
 
-def _compose(*args, check=True, capture=True):
-    """Run a docker compose command using our compose file."""
-    cmd = ["docker", "compose", "-f", str(COMPOSE_FILE), "-p", COMPOSE_PROJECT] + list(args)
-    return subprocess.run(cmd, capture_output=capture, text=True, check=check)
+def _dashboard_container_status():
+    """Return dashboard container status or '' if not found."""
+    try:
+        r = _docker("inspect", "--format", "{{.State.Status}}", DASHBOARD_CONTAINER)
+        return r.stdout.strip()
+    except subprocess.CalledProcessError:
+        return ""
 
 
 def _start_services():
     """Start TypeDB + dashboard via docker compose. Returns True on success."""
-    # Check if TypeDB is already running (fast path)
-    status = _container_status()
-    if status == "running":
+    typedb_status = _container_status()
+    dashboard_status = _dashboard_container_status()
+
+    # If TypeDB is running standalone (not via compose), start only the dashboard
+    # with TYPEDB_HOST pointing to the host machine so dashboard can reach it
+    if typedb_status == "running" and dashboard_status != "running":
+        env = os.environ.copy()
+        env["TYPEDB_HOST"] = "host.docker.internal"
+        env["TYPEDB_PORT"] = str(TYPEDB_PORT)
+        try:
+            cmd = ["docker", "compose", "-f", str(COMPOSE_FILE), "-p", COMPOSE_PROJECT,
+                   "up", "-d", "--build", "dashboard"]
+            subprocess.run(cmd, env=env, check=True)
+        except subprocess.CalledProcessError:
+            print("Dashboard start failed (TypeDB standalone mode)", file=sys.stderr)
+        return True  # TypeDB is already running
+
+    # If both are already running, nothing to do
+    if typedb_status == "running" and dashboard_status == "running":
         return True
 
-    # Start services via compose (builds dashboard image on first run)
+    # Start all services via compose (builds dashboard image on first run)
     try:
-        _compose("up", "-d", "--build")
-    except subprocess.CalledProcessError as e:
-        print(f"docker compose up failed: {e.stderr}", file=sys.stderr)
+        _compose("up", "-d", "--build", capture=False)
+    except subprocess.CalledProcessError:
+        print("docker compose up failed", file=sys.stderr)
         return False
 
     # Wait for TypeDB to become ready (up to 90s — first build takes time)
@@ -105,14 +134,39 @@ def _start_services():
     return False
 
 
-def _dashboard_container_status():
-    """Return dashboard container status or '' if not found."""
-    try:
-        r = _docker("inspect", "--format", "{{.State.Status}}", DASHBOARD_CONTAINER)
-        return r.stdout.strip()
-    except subprocess.CalledProcessError:
-        return ""
+def _start_typedb():
+    """Start just the TypeDB container (fallback when compose is unavailable)."""
+    status = _container_status()
+    if status == "running":
+        return True
+    if status == "exited":
+        _docker("start", TYPEDB_CONTAINER)
+    else:
+        _docker(
+            "run", "-d",
+            "--name", TYPEDB_CONTAINER,
+            "-p", f"{TYPEDB_PORT}:1729",
+            TYPEDB_IMAGE,
+        )
+    for _ in range(60):
+        time.sleep(1)
+        try:
+            from typedb.driver import Credentials, DriverOptions, TypeDB
+            driver = TypeDB.driver(
+                f"{TYPEDB_HOST}:{TYPEDB_PORT}",
+                Credentials(TYPEDB_USERNAME, TYPEDB_PASSWORD),
+                DriverOptions(is_tls_enabled=False),
+            )
+            driver.close()
+            return True
+        except Exception:
+            pass
+    return False
 
+
+# =============================================================================
+# TypeDB helpers
+# =============================================================================
 
 def _get_driver():
     try:
@@ -163,8 +217,12 @@ def _load_extra_schema(driver, schema_path):
         tx.commit()
 
 
+# =============================================================================
+# Commands
+# =============================================================================
+
 def cmd_init(args):
-    """Start TypeDB, create database, load base schema."""
+    """Start TypeDB + dashboard, create database, load base schema."""
     result = {"step": "", "success": False}
 
     # Step 1: Docker
@@ -173,11 +231,17 @@ def cmd_init(args):
         print(json.dumps({"success": False, "error": "Docker is not running. Start Docker Desktop (macOS) or `sudo systemctl start docker` (Linux)."}))
         sys.exit(1)
 
-    # Step 2: Start TypeDB + dashboard via docker compose
+    # Step 2: Start services (TypeDB + dashboard via compose)
     result["step"] = "services"
-    if not _start_services():
-        print(json.dumps({"success": False, "error": f"Services failed to start within 90s. Check: docker logs {TYPEDB_CONTAINER}"}))
-        sys.exit(1)
+    if COMPOSE_FILE.exists():
+        if not _start_services():
+            print(json.dumps({"success": False, "error": "Services failed to start within 90s. Check: docker logs alhazen-typedb"}))
+            sys.exit(1)
+    else:
+        # Fallback: compose file not available, start TypeDB only
+        if not _start_typedb():
+            print(json.dumps({"success": False, "error": f"TypeDB failed to start within 60s. Check: docker logs {TYPEDB_CONTAINER}"}))
+            sys.exit(1)
 
     # Step 3: Database
     result["step"] = "database"
@@ -190,7 +254,6 @@ def cmd_init(args):
             _load_schema(driver)
             schema_result = "loaded"
         except Exception as e:
-            # Schema may already be loaded — that's fine
             schema_result = f"already-loaded (or error: {e})"
 
         # Step 5: Load extra schemas passed via --extra-schema
@@ -206,12 +269,15 @@ def cmd_init(args):
             except Exception as e:
                 extra_results.append({"file": str(extra_path), "result": f"already-loaded (or error: {e})"})
 
+    dashboard_status = _dashboard_container_status()
     output = {
         "success": True,
         "typedb": "running",
         "database": TYPEDB_DATABASE,
         "database_created": created,
         "schema": schema_result,
+        "dashboard": dashboard_status or "not-started",
+        "dashboard_url": "http://localhost:3001" if dashboard_status == "running" else None,
         "message": "Alhazen core ready.",
     }
     if extra_results:
@@ -220,9 +286,10 @@ def cmd_init(args):
 
 
 def cmd_status(args):
-    """Check TypeDB container and database state."""
+    """Check TypeDB + dashboard container state."""
     docker_ok = _is_docker_running()
     container_status = _container_status() if docker_ok else "docker-not-running"
+    dashboard_status = _dashboard_container_status() if docker_ok else "docker-not-running"
 
     typedb_reachable = False
     db_exists = False
@@ -233,8 +300,6 @@ def cmd_status(args):
                 db_exists = _database_exists(driver)
         except Exception:
             pass
-
-    dashboard_status = _dashboard_container_status() if docker_ok else "docker-not-running"
 
     print(json.dumps({
         "success": True,
@@ -298,7 +363,6 @@ def cmd_wire_dashboard(args):
     for slot, dest in slots:
         src = dashboard_dir / slot
         if src.exists():
-            # Ensure dest directory exists in container
             _docker("exec", DASHBOARD_CONTAINER, "mkdir", "-p", f"/app/{dest}")
             _docker("cp", f"{src}/.", f"{DASHBOARD_CONTAINER}:/app/{dest}")
             wired.append(slot)
@@ -331,17 +395,14 @@ def cmd_wire_dashboard(args):
 
 def _update_skills_config_in_container(skill_name, args):
     """Merge this skill's metadata into skills-config.json inside the container."""
-    # Read current config from container
     try:
         r = _docker("exec", DASHBOARD_CONTAINER, "cat", "/app/public/skills-config.json")
         configs = json.loads(r.stdout)
     except Exception:
         configs = []
 
-    # Remove existing entry for this skill (if re-wiring)
     configs = [c for c in configs if c.get("slug") != skill_name]
 
-    # Add new entry
     entry = {
         "slug": skill_name,
         "enabled": True,
@@ -353,11 +414,10 @@ def _update_skills_config_in_container(skill_name, args):
     }
     configs.append(entry)
 
-    # Write back to container
     config_json = json.dumps(configs, indent=2)
     _docker(
         "exec", DASHBOARD_CONTAINER,
-        "sh", "-c", f"echo '{config_json}' > /app/public/skills-config.json",
+        "sh", "-c", f"cat > /app/public/skills-config.json << 'EOJSON'\n{config_json}\nEOJSON",
     )
 
 
@@ -374,7 +434,6 @@ def cmd_rebuild_dashboard(args):
         print(json.dumps({"success": False, "error": "Next.js build failed. Check container logs."}))
         sys.exit(1)
 
-    # Restart the container to pick up the new build
     _docker("restart", DASHBOARD_CONTAINER)
 
     print(json.dumps({
@@ -390,14 +449,12 @@ def cmd_dashboard_status(args):
         print(json.dumps({"success": True, "dashboard": status or "not-created", "skills": []}))
         return
 
-    # Read skills-config.json from container
     try:
         r = _docker("exec", DASHBOARD_CONTAINER, "cat", "/app/public/skills-config.json")
         configs = json.loads(r.stdout)
     except Exception:
         configs = []
 
-    # Check which skill directories exist in the container
     try:
         r = _docker("exec", DASHBOARD_CONTAINER, "ls", "/app/.claude/skills/")
         skill_dirs = r.stdout.strip().split() if r.stdout.strip() else []
@@ -433,8 +490,12 @@ def cmd_reset(args):
     }))
 
 
+# =============================================================================
+# CLI
+# =============================================================================
+
 def main():
-    parser = argparse.ArgumentParser(description="Alhazen Core — TypeDB infrastructure setup")
+    parser = argparse.ArgumentParser(description="Alhazen Core — TypeDB + Dashboard infrastructure setup")
     sub = parser.add_subparsers(dest="command", required=True)
 
     init_p = sub.add_parser("init", help="Start TypeDB + dashboard, create database, load base schema")
@@ -453,7 +514,7 @@ def main():
 
     sub.add_parser("rebuild-dashboard", help="Rebuild Next.js inside the dashboard container")
     sub.add_parser("dashboard-status", help="Show which skills are wired into the dashboard")
-    sub.add_parser("status", help="Check TypeDB container and database state")
+    sub.add_parser("status", help="Check TypeDB + dashboard container state")
 
     reset_p = sub.add_parser("reset", help="Drop and recreate the database (destroys data)")
     reset_p.add_argument("--yes", action="store_true", help="Confirm destructive reset")

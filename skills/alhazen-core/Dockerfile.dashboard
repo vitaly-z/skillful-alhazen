@@ -20,6 +20,14 @@ WORKDIR /app
 COPY --from=dashboard-src /src/dashboard/package*.json ./
 RUN ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci
 COPY --from=dashboard-src /src/dashboard/ ./
+
+# Strip skill-specific pages/components/routes/libs — they'll be wired in later
+# via alhazen_core.py wire-dashboard. Without this, the build fails on missing imports.
+RUN find src/app -maxdepth 1 -name '(*' -type d -exec rm -rf {} + 2>/dev/null || true
+RUN find src/app/api -maxdepth 1 -mindepth 1 -not -name 'typedb-status' -exec rm -rf {} + 2>/dev/null || true
+RUN find src/components -maxdepth 1 -mindepth 1 -not -name 'ui' -exec rm -rf {} + 2>/dev/null || true
+RUN find src/lib -maxdepth 1 -name '*.ts' -not -name 'utils.ts' -exec rm -f {} + 2>/dev/null || true
+
 # Empty skills-config.json — no skills wired yet
 RUN echo '[]' > public/skills-config.json
 # Empty namespace-config.json
