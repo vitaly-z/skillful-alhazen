@@ -208,7 +208,14 @@ def generate_id(prefix: str) -> str:
 
 
 def escape_string(s: str) -> str:
-    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    return (s
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+        .replace("\0", "")
+    )
 
 
 def get_timestamp() -> str:
@@ -326,84 +333,98 @@ def run_hook():
     input_id = generate_id("skilllog-in")
     output_id = generate_id("skilllog-out")
 
-    try:
-        from typedb.driver import TransactionType
+    import time
 
-        driver, database = get_typedb_connection()
+    from typedb.driver import TransactionType
 
-        with driver.transaction(database, TransactionType.WRITE) as tx:
-            # Insert invocation entity
-            tx.query(f"""
-                insert $inv isa slog-invocation,
-                    has id "{invocation_id}",
-                    has name "{escape_string(f'{skill_name}:{cmd_name}')}",
-                    has slog-skill-name "{escape_string(skill_name)}",
-                    has slog-command-name "{escape_string(cmd_name)}",
-                    has alh-session-id "{escape_string(session_id)}",
-                    has slog-exit-code {exit_code},
-                    has slog-input-tokens-estimate {input_tokens},
-                    has slog-output-tokens-estimate {output_tokens},
-                    has slog-total-tokens-estimate {total_tokens},
-                    has slog-context-tokens-estimate {context_tokens},
-                    has slog-claude-md-tokens {claude_md_tokens},
-                    has slog-memory-md-tokens {memory_md_tokens},
-                    has slog-skill-mds-tokens {skill_mds_tokens},
-                    has slog-soul-md-tokens {soul_md_tokens},
-                    has slog-agents-md-tokens {agents_md_tokens},
-                    has slog-evaluation-label "unlabeled",
-                    has created-at {timestamp},
-                    has provenance "skilllog-hook";
-            """).resolve()
+    max_attempts = 2
+    for attempt in range(max_attempts):
+        driver = None
+        try:
+            driver, database = get_typedb_connection()
 
-            # Insert input artifact (store inline — commands are always small)
-            tx.query(f"""
-                insert $art isa slog-input,
-                    has id "{input_id}",
-                    has name "input:{invocation_id}",
-                    has content "{escape_string(command)}",
-                    has format "bash",
-                    has created-at {timestamp},
-                    has provenance "skilllog-hook";
-            """).resolve()
+            with driver.transaction(database, TransactionType.WRITE) as tx:
+                # Insert invocation entity
+                tx.query(f"""
+                    insert $inv isa slog-invocation,
+                        has id "{invocation_id}",
+                        has name "{escape_string(f'{skill_name}:{cmd_name}')}",
+                        has slog-skill-name "{escape_string(skill_name)}",
+                        has slog-command-name "{escape_string(cmd_name)}",
+                        has alh-session-id "{escape_string(session_id)}",
+                        has slog-exit-code {exit_code},
+                        has slog-input-tokens-estimate {input_tokens},
+                        has slog-output-tokens-estimate {output_tokens},
+                        has slog-total-tokens-estimate {total_tokens},
+                        has slog-context-tokens-estimate {context_tokens},
+                        has slog-claude-md-tokens {claude_md_tokens},
+                        has slog-memory-md-tokens {memory_md_tokens},
+                        has slog-skill-mds-tokens {skill_mds_tokens},
+                        has slog-soul-md-tokens {soul_md_tokens},
+                        has slog-agents-md-tokens {agents_md_tokens},
+                        has slog-evaluation-label "unlabeled",
+                        has created-at {timestamp},
+                        has provenance "skilllog-hook";
+                """).resolve()
 
-            # Insert output artifact (truncate if very large)
-            truncated_output = output_text[:8000] if len(output_text) > 8000 else output_text
-            tx.query(f"""
-                insert $art isa slog-output,
-                    has id "{output_id}",
-                    has name "output:{invocation_id}",
-                    has content "{escape_string(truncated_output)}",
-                    has format "text",
-                    has created-at {timestamp},
-                    has provenance "skilllog-hook";
-            """).resolve()
+                # Insert input artifact (store inline — commands are always small)
+                tx.query(f"""
+                    insert $art isa slog-input,
+                        has id "{input_id}",
+                        has name "input:{invocation_id}",
+                        has content "{escape_string(command)}",
+                        has format "bash",
+                        has created-at {timestamp},
+                        has provenance "skilllog-hook";
+                """).resolve()
 
-            # Link input artifact to invocation via representation relation
-            tx.query(f"""
-                match
-                    $inv isa slog-invocation, has id "{invocation_id}";
-                    $art isa slog-input, has id "{input_id}";
-                insert (referent: $inv, artifact: $art) isa alh-representation;
-            """).resolve()
+                # Insert output artifact (truncate if very large)
+                truncated_output = output_text[:8000] if len(output_text) > 8000 else output_text
+                tx.query(f"""
+                    insert $art isa slog-output,
+                        has id "{output_id}",
+                        has name "output:{invocation_id}",
+                        has content "{escape_string(truncated_output)}",
+                        has format "text",
+                        has created-at {timestamp},
+                        has provenance "skilllog-hook";
+                """).resolve()
 
-            # Link output artifact to invocation
-            tx.query(f"""
-                match
-                    $inv isa slog-invocation, has id "{invocation_id}";
-                    $art isa slog-output, has id "{output_id}";
-                insert (referent: $inv, artifact: $art) isa alh-representation;
-            """).resolve()
+                # Link input artifact to invocation via representation relation
+                tx.query(f"""
+                    match
+                        $inv isa slog-invocation, has id "{invocation_id}";
+                        $art isa slog-input, has id "{input_id}";
+                    insert (referent: $inv, artifact: $art) isa alh-representation;
+                """).resolve()
 
-            tx.commit()
+                # Link output artifact to invocation
+                tx.query(f"""
+                    match
+                        $inv isa slog-invocation, has id "{invocation_id}";
+                        $art isa slog-output, has id "{output_id}";
+                    insert (referent: $inv, artifact: $art) isa alh-representation;
+                """).resolve()
 
-        driver.close()
+                tx.commit()
 
-    except Exception as e:
-        if error_on_typedb_unavailable():
-            print(f"[skilllog] ERROR: Failed to log invocation to TypeDB: {e}", file=sys.stderr)
-            sys.exit(1)
-        # If error_on_typedb_unavailable is False (not the default), silently pass
-        sys.exit(0)
+            break  # success — exit retry loop
+
+        except Exception as e:
+            if attempt < max_attempts - 1:
+                time.sleep(0.5)
+                continue
+            if error_on_typedb_unavailable():
+                print(f"[skilllog] ERROR: Failed to log invocation to TypeDB: {e}", file=sys.stderr)
+                sys.exit(1)
+            sys.exit(0)
+
+        finally:
+            if driver is not None:
+                try:
+                    driver.close()
+                except Exception:
+                    pass
 
 
 # ---------------------------------------------------------------------------
