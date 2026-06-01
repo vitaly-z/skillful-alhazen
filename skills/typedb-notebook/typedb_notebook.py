@@ -683,6 +683,35 @@ def show_pipeline_note(args):
     print(json.dumps(out, indent=2))
 
 
+def list_pipeline_notes(args):
+    """List all analysis pipeline notes (polymorphic), with their linked source collections."""
+    with get_driver() as driver:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            rows = list(tx.query(
+                'match $n isa alh-analysis-pipeline-note; '
+                'fetch { "id": $n.id, "name": $n.name, "content": $n.content };'
+            ).resolve())
+
+            notes = []
+            for r in rows:
+                nid = r["id"]
+                colls = list(tx.query(
+                    f'match $n isa alh-analysis-pipeline-note, has id "{escape_string(nid)}"; '
+                    f'(note: $n, subject: $c) isa alh-aboutness; $c isa alh-collection; '
+                    f'fetch {{ "id": $c.id, "name": $c.name }};'
+                ).resolve())
+                content = r.get("content")
+                notes.append({
+                    "id": nid,
+                    "name": r.get("name"),
+                    "has_content": bool(content),
+                    "content_preview": content[:280] if content else None,
+                    "collections": [{k: v for k, v in c.items() if v is not None} for c in colls],
+                })
+
+    print(json.dumps({"success": True, "notes": notes, "count": len(notes)}, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="TypeDB Notebook CLI for Alhazen's knowledge graph"
@@ -780,6 +809,10 @@ def main():
     p = subparsers.add_parser("show-pipeline-note", help="Show a pipeline note's script, config, and content")
     p.add_argument("--id", required=True, help="Pipeline note ID")
 
+    # list-pipeline-notes
+    p = subparsers.add_parser("list-pipeline-notes",
+                              help="List analysis pipeline notes with their linked collections")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -805,6 +838,7 @@ def main():
         "create-pipeline-note": create_pipeline_note,
         "run-pipeline-note": run_pipeline_note,
         "show-pipeline-note": show_pipeline_note,
+        "list-pipeline-notes": list_pipeline_notes,
     }
 
     try:

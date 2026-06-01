@@ -9,6 +9,15 @@
     "color": "teal"
   },
   {
+    "slug": "scientific-literature",
+    "enabled": true,
+    "name": "Scientific Literature",
+    "description": "Corpora, paper embeddings, and faceting pipelines.",
+    "url_path": "/scientific-literature",
+    "icon": "BookOpen",
+    "color": "cyan"
+  },
+  {
     "slug": "jobhunt",
     "enabled": true,
     "name": "Jobhunt",
