@@ -225,6 +225,64 @@ uv run python .claude/skills/typedb-notebook/typedb_notebook.py search-tag --tag
 
 ---
 
+## Analysis Pipelines (stored, re-runnable Hamilton workflows)
+
+An **analysis-pipeline note** stores *and executes* a [Hamilton](https://hamilton.dagworks.io/)
+pipeline. It captures a throwaway analysis script — and the exact inputs it ran on — as a
+first-class, re-runnable artifact in the knowledge graph, instead of leaving it in a cache that
+gets wiped on system updates.
+
+The capability is built on two attributes of `alh-analysis-pipeline-note` (a subtype of `alh-note`):
+
+- `alh-pipeline-script` — the full source of a self-contained Hamilton module (plain functions;
+  Hamilton derives the DAG from each function's **parameter names**).
+- `alh-pipeline-config` — a JSON config: `outputs` (terminal nodes to compute), `inputs`
+  (values fed to free DAG inputs), optional `env_inputs` (map param → env var), `output_attr_map`
+  (terminal node → TypeDB attribute to write the result to; default behaviour writes nothing back
+  unless mapped), and optional `hamilton` options (e.g. `{"with_cache": true}`).
+
+Pipeline notes are linked to their **source collections** (the input data) via `alh-aboutness`.
+Domain subtypes (e.g. `scilit-faceting-note`) work with the same commands — pass `--type`.
+
+### Create a pipeline note (create-pipeline-note)
+
+```bash
+uv run python skills/typedb-notebook/typedb_notebook.py create-pipeline-note \
+    --type alh-analysis-pipeline-note \
+    --collections collection-abc123,collection-def456 \
+    --script @path/to/pipeline_module.py \
+    --config @path/to/config.json \
+    --name "My analysis"
+```
+
+`--script` / `--config` accept an inline string or an `@file` path. Each `--collections` id is
+linked to the new note via `alh-aboutness`. Returns the new `note_id`.
+
+### Run a pipeline note (run-pipeline-note)
+
+```bash
+uv run python skills/typedb-notebook/typedb_notebook.py run-pipeline-note --id <note-id>
+```
+
+Fetches the stored script + config, reloads the module (via a temp file so Hamilton's
+`inspect.getsource()` works), builds the DAG with `Builder().with_modules(mod).build()`, executes
+`dr.execute(config["outputs"], inputs=…)`, and writes each terminal output back to the attribute
+named in `output_attr_map` (delete-has-then-insert). Non-string outputs are JSON-serialized.
+Outputs with no `output_attr_map` entry are reported but not persisted.
+
+### Inspect a pipeline note (show-pipeline-note)
+
+```bash
+uv run python skills/typedb-notebook/typedb_notebook.py show-pipeline-note --id <note-id>
+```
+
+Round-trips the stored `script`, parsed `config`, and computed `content`.
+
+> **Worked example:** the scientific-literature skill's `scilit-faceting-note` is a worked subtype
+> that faceting-tags a corpus and computes cross-tabulations. See that skill's USAGE.md.
+
+---
+
 ## Data Model
 
 - **Collection**: Groups of papers/items (extensional or intensional)
@@ -244,6 +302,9 @@ uv run python .claude/skills/typedb-notebook/typedb_notebook.py search-tag --tag
 | `query-notes` | Find notes about entity | `--subject` |
 | `tag` | Tag an entity | `--entity`, `--tag` |
 | `search-tag` | Search by tag | `--tag` |
+| `create-pipeline-note` | Store a Hamilton pipeline as a note | `--script`, `--config` |
+| `run-pipeline-note` | Execute a stored pipeline, write outputs back | `--id` |
+| `show-pipeline-note` | Show a pipeline's script, config, content | `--id` |
 | `export-db` | Export database to timestamped zip | `--database` |
 | `import-db` | Import database from zip | `--zip`, `--database` |
 

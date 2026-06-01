@@ -466,6 +466,223 @@ def import_db(args):
     }, indent=2))
 
 
+# -----------------------------------------------------------------------------
+# Analysis pipeline notes (stored, re-runnable Hamilton workflows)
+# -----------------------------------------------------------------------------
+# A note that subtypes alh-analysis-pipeline-note stores a Hamilton module's
+# source (alh-pipeline-script) + a JSON config (alh-pipeline-config). The generic
+# runner reloads the module, builds the DAG, executes the requested terminal
+# outputs, and writes each result back to the attribute named by the config's
+# output_attr_map (default: content). Pipeline notes link to their source
+# collections (the input data) via alh-aboutness.
+
+_PIPELINE_ID_PREFIXES = {
+    "scilit-faceting-note": "scfn",
+    "alh-analysis-pipeline-note": "apn",
+}
+
+
+def _read_arg_or_file(value: str) -> str:
+    """Return the literal value, or the file contents if value starts with '@'."""
+    if value.startswith("@"):
+        with open(value[1:]) as f:
+            return f.read()
+    return value
+
+
+def load_pipeline_module(source_code: str, module_name: str = "alh_pipeline"):
+    """Dynamically load a Hamilton pipeline module from a source-code string.
+
+    Uses a real temp file + importlib because Hamilton's introspection calls
+    inspect.getsource(), which requires a path on disk.
+    """
+    import importlib.util
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".py", prefix=f"{module_name}_", delete=False
+    ) as f:
+        f.write(source_code)
+        tmp_path = f.name
+    spec = importlib.util.spec_from_file_location(module_name, tmp_path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = mod
+    spec.loader.exec_module(mod)
+    os.unlink(tmp_path)
+    return mod
+
+
+def create_pipeline_note(args):
+    """Create an analysis-pipeline note (or subtype) and link it to source collections."""
+    note_type = args.type
+    prefix = _PIPELINE_ID_PREFIXES.get(note_type, "pnote")
+    nid = args.id or generate_id(prefix)
+
+    script = _read_arg_or_file(args.script)
+    config = _read_arg_or_file(args.config)
+    try:
+        json.loads(config)
+    except json.JSONDecodeError as e:
+        print(json.dumps({"success": False, "error": f"--config is not valid JSON: {e}"}))
+        sys.exit(1)
+
+    now = datetime.now().isoformat(timespec="seconds")
+    collection_ids = [c.strip() for c in args.collections.split(",") if c.strip()] if args.collections else []
+
+    query = (
+        f'insert $n isa {note_type}, has id "{nid}", '
+        f'has alh-pipeline-script "{escape_string(script)}", '
+        f'has alh-pipeline-config "{escape_string(config)}", '
+        f'has created-at {now}'
+    )
+    if args.name:
+        query += f', has name "{escape_string(args.name)}"'
+    query += ";"
+
+    linked = []
+    with get_driver() as driver:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+            tx.query(query).resolve()
+            tx.commit()
+
+        for cid in collection_ids:
+            with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+                rel = (
+                    f'match $n isa {note_type}, has id "{nid}"; '
+                    f'$c isa alh-identifiable-entity, has id "{escape_string(cid)}"; '
+                    f'insert (note: $n, subject: $c) isa alh-aboutness;'
+                )
+                tx.query(rel).resolve()
+                tx.commit()
+            linked.append(cid)
+
+    print(json.dumps({
+        "success": True,
+        "note_id": nid,
+        "type": note_type,
+        "linked_collections": linked,
+        "script_chars": len(script),
+    }))
+
+
+def run_pipeline_note(args):
+    """Execute a stored Hamilton pipeline note and write terminal outputs back."""
+    nid = escape_string(args.id)
+    with get_driver() as driver:
+        # Fetch script + config (polymorphic: isa includes subtypes)
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            results = list(tx.query(
+                f'match $n isa alh-analysis-pipeline-note, has id "{nid}"; '
+                f'fetch {{ "script": $n.alh-pipeline-script, "config": $n.alh-pipeline-config }};'
+            ).resolve())
+
+        if not results:
+            print(json.dumps({"success": False, "error": f"Pipeline note {args.id} not found"}))
+            sys.exit(1)
+
+        script = results[0].get("script")
+        config_str = results[0].get("config")
+        if not script:
+            print(json.dumps({"success": False, "error": "Note has no alh-pipeline-script"}))
+            sys.exit(1)
+        if not config_str:
+            print(json.dumps({"success": False, "error": "Note has no alh-pipeline-config"}))
+            sys.exit(1)
+
+        config = json.loads(config_str)
+        outputs = config.get("outputs", [])
+        if not outputs:
+            print(json.dumps({"success": False, "error": "config has no 'outputs' list"}))
+            sys.exit(1)
+
+        # Resolve inputs (explicit + env-sourced)
+        inputs = dict(config.get("inputs", {}))
+        for param_name, env_var in config.get("env_inputs", {}).items():
+            val = os.environ.get(env_var)
+            if val is None:
+                print(json.dumps({"success": False, "error": f"Required env var {env_var} (for '{param_name}') is not set"}))
+                sys.exit(1)
+            inputs[param_name] = val
+
+        try:
+            from hamilton import driver as h_driver  # noqa: PLC0415
+        except ImportError:
+            print(json.dumps({"success": False, "error": "sf-hamilton not installed. Run: uv add sf-hamilton"}))
+            sys.exit(1)
+
+        print("Loading pipeline module...", file=sys.stderr)
+        mod = load_pipeline_module(script, module_name=f"pipeline_{nid}")
+
+        hamilton_cfg = config.get("hamilton", {})
+        builder = h_driver.Builder().with_modules(mod)
+        if hamilton_cfg.get("with_cache"):
+            builder = builder.with_cache()
+        dr = builder.build()
+
+        print(f"Executing Hamilton outputs: {outputs}", file=sys.stderr)
+        results_map = dr.execute(outputs, inputs=inputs)
+
+        # Write terminal outputs back per output_attr_map (default -> content)
+        output_attr_map = config.get("output_attr_map", {})
+        written = {}
+        non_persisted = {}
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+            for output_name, value in results_map.items():
+                attr_name = output_attr_map.get(output_name)
+                if attr_name is None:
+                    # Not mapped to an attribute: report but don't persist
+                    non_persisted[output_name] = value if isinstance(value, (int, float, str, dict, list, bool)) else str(value)
+                    continue
+                if not isinstance(value, str):
+                    value = json.dumps(value)
+                escaped_val = escape_string(value)
+                tx.query(
+                    f'match $n isa alh-analysis-pipeline-note, has id "{nid}", has {attr_name} $old; '
+                    f'delete has $old of $n;'
+                ).resolve()
+                tx.query(
+                    f'match $n isa alh-analysis-pipeline-note, has id "{nid}"; '
+                    f'insert $n has {attr_name} "{escaped_val}";'
+                ).resolve()
+                written[output_name] = {"attr": attr_name, "chars": len(value)}
+            tx.commit()
+
+        print(json.dumps({
+            "success": True,
+            "note_id": args.id,
+            "outputs_written": written,
+            "outputs_not_persisted": non_persisted,
+        }))
+
+
+def show_pipeline_note(args):
+    """Round-trip a pipeline note: script, parsed config, and content."""
+    nid = escape_string(args.id)
+    with get_driver() as driver:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            results = list(tx.query(
+                f'match $n isa alh-analysis-pipeline-note, has id "{nid}"; '
+                f'fetch {{ "name": $n.name, "script": $n.alh-pipeline-script, '
+                f'"config": $n.alh-pipeline-config, "content": $n.content }};'
+            ).resolve())
+
+    if not results:
+        print(json.dumps({"success": False, "error": f"Pipeline note {args.id} not found"}))
+        sys.exit(1)
+
+    r = results[0]
+    config_str = r.get("config")
+    out = {
+        "success": True,
+        "note_id": args.id,
+        "name": r.get("name"),
+        "script": r.get("script"),
+        "config": json.loads(config_str) if config_str else None,
+        "content": r.get("content"),
+    }
+    print(json.dumps(out, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="TypeDB Notebook CLI for Alhazen's knowledge graph"
@@ -542,6 +759,27 @@ def main():
     p.add_argument("--zip", required=True, help="Path to the export zip file")
     p.add_argument("--database", required=True, help="Target database name (must not exist)")
 
+    # create-pipeline-note
+    p = subparsers.add_parser(
+        "create-pipeline-note",
+        help="Store a Hamilton pipeline as a note and link it to source collections",
+    )
+    p.add_argument("--type", default="alh-analysis-pipeline-note",
+                   help="Note type (subtype of alh-analysis-pipeline-note; default: alh-analysis-pipeline-note)")
+    p.add_argument("--script", required=True, help="Hamilton module source (or @path/to/module.py)")
+    p.add_argument("--config", required=True, help="JSON config (or @path/to/config.json)")
+    p.add_argument("--collections", help="Comma-separated source collection IDs (linked via alh-aboutness)")
+    p.add_argument("--name", help="Note name/title")
+    p.add_argument("--id", help="Specific ID (auto-generated if not provided)")
+
+    # run-pipeline-note
+    p = subparsers.add_parser("run-pipeline-note", help="Execute a stored pipeline note and write outputs back")
+    p.add_argument("--id", required=True, help="Pipeline note ID")
+
+    # show-pipeline-note
+    p = subparsers.add_parser("show-pipeline-note", help="Show a pipeline note's script, config, and content")
+    p.add_argument("--id", required=True, help="Pipeline note ID")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -564,6 +802,9 @@ def main():
         "close-gap": close_gap,
         "export-db": export_db,
         "import-db": import_db,
+        "create-pipeline-note": create_pipeline_note,
+        "run-pipeline-note": run_pipeline_note,
+        "show-pipeline-note": show_pipeline_note,
     }
 
     try:
