@@ -91,11 +91,7 @@ def _find_profile(driver, person_id: str) -> str | None:
         ''').resolve())
     if not results:
         return None
-    val = results[0]["id"]
-    # TypeDB 3.x fetch returns plain values directly (not {"value": ...} dicts)
-    if isinstance(val, dict):
-        return val.get("value")
-    return val
+    return results[0]["id"]
 
 
 def cmd_create_profile(args):
