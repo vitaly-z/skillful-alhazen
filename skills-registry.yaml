@@ -4,6 +4,8 @@ defaults:
 skills:
 - name: alhazen-core
   path: skills/alhazen-core
+- name: agent-os
+  path: skills/agent-os
 - name: agentic-memory
   path: skills/agentic-memory
   dashboard:
@@ -82,6 +84,7 @@ skills:
     color: teal
 schema_map:
   load_order:
+  - agent-os
   - agentic-memory
   - coach
   - curation-skill-builder
@@ -90,6 +93,10 @@ schema_map:
   - scientific-literature
   - tech-recon
   namespaces:
+    aos:
+      skill: agent-os
+      schema: skills/agent-os/schema.tql
+      depends_on: []
     nbmem:
       skill: agentic-memory
       schema: skills/agentic-memory/schema.tql

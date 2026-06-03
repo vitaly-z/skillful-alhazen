@@ -1,0 +1,150 @@
+define
+
+# =============================================================================
+# agent-os namespace schema
+# Operator context skill: large-scale personal context dataset
+# =============================================================================
+
+# =============================================================================
+# ATTRIBUTES
+# =============================================================================
+
+attribute aos-timezone, value string;
+attribute aos-location-preference, value string;
+attribute aos-target-role, value string;
+attribute aos-importance, value string;
+attribute aos-last-active, value datetime;
+attribute aos-priority, value integer;
+attribute aos-goal-status, value string;
+attribute aos-target-date, value datetime;
+attribute aos-preference-category, value string;
+attribute aos-preference-strength, value string;
+attribute aos-event-type, value string;
+attribute aos-event-date, value datetime;
+attribute aos-metric-type, value string;
+attribute aos-metric-value, value double;
+attribute aos-metric-unit, value string;
+attribute aos-metric-date, value datetime;
+attribute aos-metric-source, value string;
+attribute aos-gmail-thread-id, value string;
+attribute aos-subject, value string;
+attribute aos-message-count, value integer;
+attribute aos-calendar-event-id, value string;
+attribute aos-duration-minutes, value integer;
+attribute aos-recurrence, value string;
+attribute aos-linkedin-thread-id, value string;
+attribute aos-github-repo, value string;
+attribute aos-github-event-type, value string;
+attribute aos-linkedin-page, value string;
+attribute aos-healthkit-export-date, value datetime;
+attribute aos-drive-file-id, value string;
+attribute aos-drive-mime-type, value string;
+attribute aos-ingestion-source, value string;
+attribute aos-items-processed, value integer;
+attribute aos-watermark, value datetime;
+
+# =============================================================================
+# RELATIONS (before entities so role names resolve in plays clauses)
+# =============================================================================
+
+relation aos-profile-has-goal,
+    relates profile,
+    relates goal;
+
+relation aos-profile-has-preference,
+    relates profile,
+    relates preference;
+
+relation aos-profile-has-life-event,
+    relates profile,
+    relates event;
+
+relation aos-interaction-about,
+    relates interaction,
+    relates topic;
+
+relation aos-topic-evidenced-by,
+    relates topic,
+    relates evidence;
+
+relation aos-skill-topic-bridge,
+    relates skill,
+    relates topic;
+
+# =============================================================================
+# ENTITIES
+# =============================================================================
+
+entity aos-operator-profile sub alh-role,
+    owns aos-timezone,
+    owns aos-location-preference,
+    owns aos-target-role,
+    plays aos-profile-has-goal:profile,
+    plays aos-profile-has-preference:profile,
+    plays aos-profile-has-life-event:profile;
+
+entity aos-topic sub alh-domain-thing,
+    owns aos-importance,
+    owns aos-last-active,
+    plays aos-interaction-about:topic,
+    plays aos-topic-evidenced-by:topic,
+    plays aos-skill-topic-bridge:topic;
+
+entity aos-goal sub alh-domain-thing,
+    owns aos-priority,
+    owns aos-goal-status,
+    owns aos-target-date,
+    plays aos-profile-has-goal:goal;
+
+entity aos-preference sub alh-domain-thing,
+    owns aos-preference-category,
+    owns aos-preference-strength,
+    plays aos-profile-has-preference:preference;
+
+entity aos-life-event sub alh-domain-thing,
+    owns aos-event-type,
+    owns aos-event-date,
+    plays aos-profile-has-life-event:event;
+
+entity aos-health-snapshot sub alh-domain-thing,
+    owns aos-metric-type,
+    owns aos-metric-value,
+    owns aos-metric-unit,
+    owns aos-metric-date,
+    owns aos-metric-source;
+
+entity aos-email-thread sub alh-interaction,
+    owns aos-gmail-thread-id,
+    owns aos-subject,
+    owns aos-message-count,
+    plays aos-interaction-about:interaction;
+
+entity aos-calendar-event sub alh-interaction,
+    owns aos-calendar-event-id,
+    owns aos-duration-minutes,
+    owns aos-recurrence,
+    plays aos-interaction-about:interaction;
+
+entity aos-linkedin-message-thread sub alh-interaction,
+    owns aos-linkedin-thread-id,
+    owns aos-message-count,
+    plays aos-interaction-about:interaction;
+
+entity aos-github-artifact sub alh-artifact,
+    owns aos-github-repo,
+    owns aos-github-event-type;
+
+entity aos-linkedin-artifact sub alh-artifact,
+    owns aos-linkedin-page;
+
+entity aos-healthkit-artifact sub alh-artifact,
+    owns aos-healthkit-export-date;
+
+entity aos-drive-artifact sub alh-artifact,
+    owns aos-drive-file-id,
+    owns aos-drive-mime-type;
+
+entity aos-ingestion-note sub alh-note,
+    owns aos-ingestion-source,
+    owns aos-items-processed,
+    owns aos-watermark;

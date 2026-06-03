@@ -1,0 +1,18 @@
+name: agent-os
+version: 0.1.0
+description: Large-scale operator context dataset -- ingests Gmail, Calendar, GitHub, LinkedIn, Drive, and HealthKit into TypeDB for rich structured personal context.
+author: skillful-alhazen
+license: MIT
+typedb_schema: schema.tql
+cli: agent_os.py
+dependencies:
+  - alhazen-core
+schema:
+  namespace: aos
+  depends_on: []
+tags:
+  - memory
+  - agents
+  - personal-context
+  - knowledge-graph
+  - ingestion
