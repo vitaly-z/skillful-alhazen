@@ -232,6 +232,7 @@ def cmd_add_life_event(args):
 
 def cmd_add_topic(args):
     """Add an aos-topic (global -- discovered from interactions or manually added)."""
+    _get_profile_id_or_exit(args.person)  # validate profile exists
     ts = get_timestamp()
     tid = generate_id("aos-topic")
     name = escape_string(args.name)
