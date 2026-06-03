@@ -257,6 +257,175 @@ def cmd_add_topic(args):
     print(json.dumps({"success": True, "id": tid}))
 
 
+def cmd_get_context(args):
+    """Return structured context JSON for a person."""
+    dimension = args.dimension or "all"
+
+    with get_driver() as driver:
+        profile_id = _find_profile(driver, args.person)
+        if not profile_id:
+            print(json.dumps({"success": False, "error": f"No profile for person '{args.person}'"}))
+            return
+        pesc = escape_string(profile_id)
+
+        result = {"success": True}
+
+        if dimension in ("goals", "all"):
+            with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+                rows = list(tx.query(f'''
+                    match
+                      $profile isa aos-operator-profile, has id "{pesc}";
+                      (profile: $profile, goal: $goal) isa aos-profile-has-goal;
+                      $goal has id $gid, has description $desc,
+                            has aos-priority $pri, has aos-goal-status $status;
+                    fetch {{
+                      "id": $gid, "description": $desc,
+                      "priority": $pri, "status": $status
+                    }};
+                ''').resolve())
+            result["goals"] = [
+                {"id": r["id"], "description": r["description"],
+                 "priority": r["priority"], "status": r["status"]}
+                for r in rows
+            ]
+
+        if dimension in ("preferences", "all"):
+            with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+                rows = list(tx.query(f'''
+                    match
+                      $profile isa aos-operator-profile, has id "{pesc}";
+                      (profile: $profile, preference: $pref) isa aos-profile-has-preference;
+                      $pref has id $pid, has description $desc,
+                            has aos-preference-category $cat,
+                            has aos-preference-strength $str;
+                    fetch {{
+                      "id": $pid, "description": $desc,
+                      "category": $cat, "strength": $str
+                    }};
+                ''').resolve())
+            result["preferences"] = [
+                {"id": r["id"], "description": r["description"],
+                 "category": r["category"], "strength": r["strength"]}
+                for r in rows
+            ]
+
+        if dimension in ("career", "all"):
+            with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+                rows = list(tx.query(f'''
+                    match
+                      $profile isa aos-operator-profile, has id "{pesc}";
+                      (profile: $profile, event: $event) isa aos-profile-has-life-event;
+                      $event has id $eid, has description $desc,
+                              has aos-event-type $etype, has aos-event-date $edate;
+                    fetch {{
+                      "id": $eid, "description": $desc,
+                      "type": $etype, "date": $edate
+                    }};
+                ''').resolve())
+            result["life_events"] = [
+                {"id": r["id"], "description": r["description"],
+                 "type": r["type"], "date": str(r["date"])}
+                for r in rows
+            ]
+
+        if dimension in ("topics", "all"):
+            with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+                rows = list(tx.query(f'''
+                    match $topic isa aos-topic,
+                          has id $tid, has name $tname, has aos-importance $imp;
+                    fetch {{ "id": $tid, "name": $tname, "importance": $imp }};
+                ''').resolve())
+            result["topics"] = [
+                {"id": r["id"], "name": r["name"],
+                 "importance": r["importance"]}
+                for r in rows
+            ]
+
+        if dimension in ("interactions", "all"):
+            with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+                rows = list(tx.query(f'''
+                    match $i isa alh-interaction, has id $iid, has alh-interaction-type $itype;
+                    fetch {{ "id": $iid, "type": $itype }};
+                ''').resolve())
+            result["interactions"] = [
+                {"id": r["id"], "type": r["type"]}
+                for r in rows
+            ]
+
+        if dimension in ("health", "all"):
+            with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+                rows = list(tx.query(f'''
+                    match $h isa aos-health-snapshot,
+                          has aos-metric-type $mtype, has aos-metric-value $mval,
+                          has aos-metric-date $mdate;
+                    fetch {{ "metric_type": $mtype, "value": $mval, "date": $mdate }};
+                ''').resolve())
+            result["health"] = [
+                {"metric_type": r["metric_type"],
+                 "value": r["value"],
+                 "date": str(r["date"])}
+                for r in rows
+            ]
+
+    print(json.dumps(result))
+
+
+def cmd_show_profile(args):
+    """Show full structured profile for a person."""
+    pid = escape_string(args.person)
+
+    with get_driver() as driver:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            rows = list(tx.query(f'''
+                match $p isa alh-person, has id "{pid}", has name $n;
+                fetch {{ "id": $p.id, "name": $n }};
+            ''').resolve())
+        if not rows:
+            print(json.dumps({"success": False, "error": f"Person '{args.person}' not found"}))
+            return
+        person = {"id": rows[0]["id"], "name": rows[0]["name"]}
+
+        profile_id = _find_profile(driver, args.person)
+
+    print(json.dumps({
+        "success": True,
+        "person": person,
+        "profile_id": profile_id,
+    }))
+
+
+def cmd_show_ingestion(args):
+    """Show last ingestion note per source for a person's profile."""
+    with get_driver() as driver:
+        profile_id = _find_profile(driver, args.person)
+        if not profile_id:
+            print(json.dumps({"success": False, "error": f"No profile for '{args.person}'"}))
+            return
+        pesc = escape_string(profile_id)
+
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            rows = list(tx.query(f'''
+                match
+                  $profile isa aos-operator-profile, has id "{pesc}";
+                  (subject: $profile, note: $note) isa alh-aboutness;
+                  $note isa aos-ingestion-note,
+                        has aos-ingestion-source $src,
+                        has aos-items-processed $count,
+                        has created-at $ts;
+                fetch {{
+                  "source": $src, "items": $count, "last_run": $ts
+                }};
+            ''').resolve())
+        ingestion = [
+            {"source": r["source"],
+             "items": r["items"],
+             "last_run": str(r["last_run"])}
+            for r in rows
+        ]
+
+    print(json.dumps({"success": True, "ingestion": ingestion}))
+
+
 # ---------------------------------------------------------------------------
 # Argparse
 # ---------------------------------------------------------------------------
@@ -303,6 +472,21 @@ def build_parser():
     p.add_argument("--description")
     p.add_argument("--importance", default="medium", choices=["high", "medium", "low"])
 
+    # get-context
+    p = sub.add_parser("get-context", help="Get structured context JSON")
+    p.add_argument("--person", required=True)
+    p.add_argument("--dimension",
+                   choices=["goals", "preferences", "career", "topics", "interactions", "health", "all"],
+                   default="all")
+
+    # show-profile
+    p = sub.add_parser("show-profile", help="Show full structured profile")
+    p.add_argument("--person", required=True)
+
+    # show-ingestion
+    p = sub.add_parser("show-ingestion", help="Show last ingestion timestamps per source")
+    p.add_argument("--person", required=True)
+
     return parser
 
 
@@ -319,6 +503,9 @@ def main():
         "add-preference":  cmd_add_preference,
         "add-life-event":  cmd_add_life_event,
         "add-topic":       cmd_add_topic,
+        "get-context":     cmd_get_context,
+        "show-profile":    cmd_show_profile,
+        "show-ingestion":  cmd_show_ingestion,
     }
 
     fn = dispatch.get(args.command)

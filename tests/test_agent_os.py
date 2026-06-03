@@ -128,3 +128,87 @@ class TestManualEntry:
         )
         assert result["id"].startswith("aos-topic-")
         typedb_delete(f'match $t isa aos-topic, has id "{result["id"]}"; delete $t;')
+
+
+class TestContextRetrieval:
+    """Tests for get-context, show-profile, show-ingestion."""
+
+    TEST_TAG = uuid.uuid4().hex[:8]
+    goal_id = None
+    pref_id = None
+    event_id = None
+    topic_id = None
+
+    @classmethod
+    def setup_class(cls):
+        run_cmd("create-profile", "--person", OPERATOR_ID)
+        r = run_cmd("add-goal", "--person", OPERATOR_ID,
+                    "--description", f"Test goal for context {cls.TEST_TAG}",
+                    "--priority", "2")
+        cls.goal_id = r["id"]
+        r = run_cmd("add-preference", "--person", OPERATOR_ID,
+                    "--category", "technical",
+                    "--description", f"Test pref {cls.TEST_TAG}",
+                    "--strength", "soft")
+        cls.pref_id = r["id"]
+        r = run_cmd("add-life-event", "--person", OPERATOR_ID,
+                    "--type", "conference",
+                    "--date", "2025-06-01T00:00:00",
+                    "--description", f"Test event {cls.TEST_TAG}")
+        cls.event_id = r["id"]
+        r = run_cmd("add-topic", "--person", OPERATOR_ID,
+                    "--name", f"Test Topic {cls.TEST_TAG}",
+                    "--importance", "high")
+        cls.topic_id = r["id"]
+
+    @classmethod
+    def teardown_class(cls):
+        if cls.goal_id:
+            typedb_delete(f'match $g isa aos-goal, has id "{cls.goal_id}"; delete $g;')
+        if cls.pref_id:
+            typedb_delete(f'match $p isa aos-preference, has id "{cls.pref_id}"; delete $p;')
+        if cls.event_id:
+            typedb_delete(f'match $e isa aos-life-event, has id "{cls.event_id}"; delete $e;')
+        if cls.topic_id:
+            typedb_delete(f'match $t isa aos-topic, has id "{cls.topic_id}"; delete $t;')
+
+    def test_get_context_goals(self):
+        result = run_cmd("get-context", "--person", OPERATOR_ID, "--dimension", "goals")
+        assert "goals" in result
+        ids = [g["id"] for g in result["goals"]]
+        assert self.goal_id in ids
+
+    def test_get_context_preferences(self):
+        result = run_cmd("get-context", "--person", OPERATOR_ID, "--dimension", "preferences")
+        assert "preferences" in result
+        ids = [p["id"] for p in result["preferences"]]
+        assert self.pref_id in ids
+
+    def test_get_context_career(self):
+        result = run_cmd("get-context", "--person", OPERATOR_ID, "--dimension", "career")
+        assert "life_events" in result
+        ids = [e["id"] for e in result["life_events"]]
+        assert self.event_id in ids
+
+    def test_get_context_topics(self):
+        result = run_cmd("get-context", "--person", OPERATOR_ID, "--dimension", "topics")
+        assert "topics" in result
+        ids = [t["id"] for t in result["topics"]]
+        assert self.topic_id in ids
+
+    def test_get_context_all(self):
+        result = run_cmd("get-context", "--person", OPERATOR_ID, "--dimension", "all")
+        for key in ["goals", "preferences", "life_events", "topics", "interactions", "health"]:
+            assert key in result
+
+    def test_show_profile(self):
+        result = run_cmd("show-profile", "--person", OPERATOR_ID)
+        assert "person" in result
+        assert result["person"]["id"] == OPERATOR_ID
+        assert "profile_id" in result
+
+    def test_show_ingestion(self):
+        result = run_cmd("show-ingestion", "--person", OPERATOR_ID)
+        assert "ingestion" in result
+        # No sources ingested yet -- should return empty list or dict
+        assert isinstance(result["ingestion"], (list, dict))
