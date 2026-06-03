@@ -283,6 +283,241 @@ Round-trips the stored `script`, parsed `config`, and computed `content`.
 
 ---
 
+## Generic Graph CRUD Engine
+
+A **schema-validated, generic graph-write layer** so that agents (and skills) mutate the
+TypeDB knowledge graph **without authoring raw TypeQL**. You describe *what* to write as
+typed entities, attributes, and relations; the engine builds and runs the TypeQL.
+
+**Triggers:** "create entity", "add a node", "set attribute", "update field", "link",
+"connect", "relate", "unlink", "delete entity", "run recipe", "apply ops", "what
+attributes does X have", "describe the schema for"
+
+### Design (why this exists)
+
+- **Agents never write raw TypeQL.** Every write is expressed as a declarative op and
+  compiled by the engine, so escaping, datetime formatting, and `isa` requirements are
+  handled centrally and correctly.
+- **The schema is learned by static parse, never queried.** A variable-free schema match
+  (`match X sub Y;`) *panics TypeDB 3.8 and restarts the container*. Instead, the engine
+  parses every `.tql` file (the alh-core base + each namespace schema listed in
+  `skills-registry.yaml`) into a `SchemaModel`. The model knows every type's supertype
+  chain, owned attributes (transitively), value types, multi-valued cardinality, and the
+  roles each relation defines / each entity plays.
+- **Validation is up front.** Unknown type, abstract type, unknown/unowned attribute,
+  invalid relation role, single-valued attribute given multiple values — all rejected
+  *before* any write touches the database.
+- **`apply` is atomic.** Every op in one `apply` runs inside **one** write transaction and
+  commits once. If any op fails, nothing is written.
+- **Reads are guarded.** `query` requires a bound variable and a `fetch { ... }` clause and
+  rejects write keywords — so a read can never crash the server or mutate data.
+
+### Inspect the schema (describe-schema)
+
+Look up what a type owns / plays, or get a global summary. **Read-only, no DB access** —
+it only parses the `.tql` files, so it's always safe to run.
+
+```bash
+# One type
+uv run python skills/typedb-notebook/typedb_notebook.py describe-schema --type scilit-evidence
+
+# Global summary (counts + sorted lists of all types)
+uv run python skills/typedb-notebook/typedb_notebook.py describe-schema
+```
+
+A single-type result reports the `kind` (`entity` | `relation` | `attribute`), its
+`supertype_chain`, every owned `attribute` (`value_type`, `key`, `multi`), and (for
+entities) the `plays` list of `(relation, role)` pairs:
+
+```json
+{
+  "success": true,
+  "type": "scilit-evidence",
+  "kind": "entity",
+  "abstract": false,
+  "supertype_chain": ["scilit-evidence", "alh-note", "alh-information-content-entity", "alh-identifiable-entity"],
+  "attributes": [
+    {"name": "scilit-evidence-type", "value_type": "string", "key": false, "multi": false},
+    {"name": "id", "value_type": "string", "key": true, "multi": false}
+  ],
+  "plays": [
+    {"relation": "alh-note-threading", "role": "parent-note"},
+    {"relation": "alh-note-threading", "role": "child-note"}
+  ]
+}
+```
+
+Use `describe-schema` first whenever you are unsure of an exact attribute name, value
+type, or which role connects two entities.
+
+### The op-list model (apply)
+
+`apply` runs an ordered list of ops in one atomic transaction. This is the engine's core;
+the per-verb commands below are just convenience wrappers that build a 1-op list.
+
+```bash
+uv run python skills/typedb-notebook/typedb_notebook.py apply --dry-run --ops '[
+  {"op": "create", "type": "scilit-claim",    "as": "cl", "attrs": {"name": "Claim A", "scilit-claim-type": "primary"}},
+  {"op": "create", "type": "scilit-evidence", "as": "ev", "attrs": {"name": "Ev 1", "scilit-evidence-type": "experimental"}},
+  {"op": "link", "relation": "alh-note-threading", "roles": {"parent-note": "$cl", "child-note": "$ev"}}
+]'
+```
+
+`--ops` accepts an inline JSON array **or** an `@path/to/ops.json` file. Add `--dry-run` to
+print the compiled TypeQL (and the resolved `bindings`) without writing anything:
+
+```json
+{
+  "success": true, "dry_run": true, "ops": 3,
+  "queries": [
+    "insert $e isa scilit-claim, has id \"scilit-claim-a12e…\", has name \"Claim A\", …;",
+    "insert $e isa scilit-evidence, has id \"scilit-evidence-37c…\", …;",
+    "match $p0 isa alh-identifiable-entity, has id \"scilit-claim-a12e…\"; $p1 isa alh-identifiable-entity, has id \"scilit-evidence-37c…\"; insert (parent-note: $p0, child-note: $p1) isa alh-note-threading;"
+  ],
+  "bindings": {"cl": "scilit-claim-a12e…", "ev": "scilit-evidence-37c…"}
+}
+```
+
+**Bindings (`as` / `$ref`)** are the key feature: `"as": "cl"` records the id minted by a
+`create`, and any later op can reference it with `"$cl"` — in an attribute value, an `id`,
+or a relation role. Because reads inside a write transaction see prior uncommitted writes,
+a `create` then `link` in the same `apply` just works.
+
+**Op vocabulary:**
+
+| `op` | Required keys | Notes |
+|------|---------------|-------|
+| `create` | `type`, `attrs` | Mints an id (or pass `id`); rejects abstract types. `as` binds the id. `created-at` is auto-stamped if the type owns it. |
+| `upsert` | `type`, `id`, `attrs` | `create` if the id is absent, else `set-attr`. **Requires an explicit `id`.** |
+| `set-attr` | `id`, `attrs` | Sets/updates attributes. Single-valued attrs auto-replace; pass `"replace": true` to clear a multi-valued set first. |
+| `delete-attr` | `id`, `attrs` | `{"attr": "val"}` removes one value; `{"attr": null}` (or empty) removes **all** values of that attr. |
+| `link` | `relation`, `roles` | `roles` is `{role: entity-id}`. Relation `attrs` optional. `"idempotent": true` no-ops if the relation already exists. |
+| `unlink` | `relation`, `roles` | Deletes the matching relation. |
+| `delete` | `id` | Deletes the entity. `"detach": true` unlinks its relations first (otherwise TypeDB refuses if it still plays roles). |
+
+Validation errors are returned per op with the offending index, e.g.:
+
+```json
+{"success": false, "error": "op[0] (create): unknown attribute 'bogus-attr'"}
+{"success": false, "error": "op[0] (create): cannot create instance of abstract type 'alh-information-content-entity'"}
+{"success": false, "error": "op[0] (upsert): upsert requires an explicit id"}
+```
+
+### Per-verb CLI wrappers
+
+Each builds a single-op `apply`. All accept `--dry-run`. `--attr` and `--role` are
+repeatable `key=value` pairs (split on the first `=`).
+
+```bash
+# create-entity — mint a typed entity (returns its id)
+uv run python skills/typedb-notebook/typedb_notebook.py create-entity \
+    --type scilit-claim \
+    --attr name="My claim" --attr scilit-claim-type=primary
+# -> {"success": true, "ops": 1, "id": "scilit-claim-afe9…", "bindings": {"_new": "scilit-claim-afe9…"}, ...}
+
+# create-entity --upsert (requires --id): create if absent, else set its attrs
+uv run python skills/typedb-notebook/typedb_notebook.py create-entity \
+    --type scilit-claim --id scilit-claim-abc --upsert --attr name="Renamed"
+
+# set-attr — set/append attributes (--replace clears a multi-valued set first)
+uv run python skills/typedb-notebook/typedb_notebook.py set-attr \
+    --id scilit-claim-abc --attr scilit-claim-statement="Updated text"
+
+# delete-attr — remove one value (key=value) or all values of a key (key only)
+uv run python skills/typedb-notebook/typedb_notebook.py delete-attr \
+    --id scilit-claim-abc --attr scilit-claim-statement
+
+# link / unlink — create or remove a relation
+uv run python skills/typedb-notebook/typedb_notebook.py link \
+    --relation alh-note-threading \
+    --role parent-note=note-abc --role child-note=note-def --idempotent
+
+uv run python skills/typedb-notebook/typedb_notebook.py unlink \
+    --relation alh-note-threading \
+    --role parent-note=note-abc --role child-note=note-def
+
+# delete-entity — delete (--detach unlinks its relations first)
+uv run python skills/typedb-notebook/typedb_notebook.py delete-entity \
+    --id scilit-claim-abc --detach
+```
+
+> `set-attr` writes a delete-has-then-insert per attribute. For a `--dry-run` of `set-attr`
+> on a multi-valued attribute, pass `--type` so the engine can check cardinality without
+> hitting the DB (when actually writing, it resolves the concrete type from the live id).
+
+### Read-only queries (query)
+
+Run a guarded `match … fetch` query. The query **must** bind a variable and **must**
+contain a `fetch { ... }` clause; any write keyword (`insert`, `delete`, `define`,
+`undefine`, `update`, `put`) is rejected.
+
+```bash
+uv run python skills/typedb-notebook/typedb_notebook.py query --limit 50 --read \
+  'match $c isa scilit-claim, has name $n; fetch { "id": $c.id, "name": $n };'
+# -> {"success": true, "count": N, "rows": [ {...}, ... ]}
+```
+
+Guards (no DB access on rejection):
+
+```json
+{"success": false, "error": "read query must contain a `fetch { ... }` clause"}
+{"success": false, "error": "write keyword 'insert' not allowed in read query"}
+```
+
+`--limit` defaults to 1000.
+
+### Recipes (apply-recipe)
+
+A **recipe** is a named, reusable op-list template with `{{param}}` placeholders — the way
+domain skills package a multi-step graph operation. `apply-recipe` resolves a recipe by
+name from any `recipes/` directory under `skills/` or `local_skills/`, substitutes params,
+and runs the resulting op-list through the same atomic engine.
+
+```bash
+uv run python skills/typedb-notebook/typedb_notebook.py apply-recipe \
+    --recipe create-deep-dive \
+    --param name="GLP-1 mechanism" \
+    --param purpose="Deep dive on the focal review" \
+    --param focal_paper=scilit-paper-123 \
+    --param status=active
+```
+
+**Recipe file format** (`<name>.json` in a skill's `recipes/` dir):
+
+```json
+{
+  "name": "create-deep-dive",
+  "description": "Create a deep-dive investigation about a single focal paper …",
+  "params": ["name", "purpose", "focal_paper", "status"],
+  "ops": [
+    {"op": "create", "type": "scilit-investigation", "as": "inv",
+     "attrs": {"name": "{{name}}", "content": "{{purpose}}",
+               "scilit-investigation-status": "{{status}}",
+               "scilit-investigation-type": "deep-dive"}},
+    {"op": "link", "relation": "alh-aboutness",
+     "roles": {"note": "$inv", "subject": "{{focal_paper}}"}},
+    {"op": "create", "type": "scilit-corpus", "as": "corpus",
+     "attrs": {"name": "{{name}} - papers", "alh-is-extensional": "false"}},
+    {"op": "link", "relation": "alh-aboutness", "roles": {"note": "$inv", "subject": "$corpus"}},
+    {"op": "link", "relation": "alh-collection-membership", "idempotent": true,
+     "roles": {"collection": "$corpus", "member": "{{focal_paper}}"}}
+  ]
+}
+```
+
+- A string that is exactly `"{{key}}"` is replaced by the param's **raw** value; a
+  placeholder embedded in a larger string is replaced textually.
+- `params` declares required params — a missing one is reported before any write.
+- `as`/`$ref` bindings work across recipe ops exactly as in `apply`.
+- `--dry-run` prints the compiled TypeQL per op.
+
+Domain recipes live in their **own** skill's `recipes/` directory (e.g.
+`local_skills/scientific-literature/recipes/`). For external skills, the `recipes/` dir is
+maintained **upstream** (e.g. `alhazen-skill-examples`) — fixes there must go upstream, or
+`make skills-update` will overwrite them.
+
+---
+
 ## Data Model
 
 - **Collection**: Groups of papers/items (extensional or intensional)
@@ -305,6 +540,16 @@ Round-trips the stored `script`, parsed `config`, and computed `content`.
 | `create-pipeline-note` | Store a Hamilton pipeline as a note | `--script`, `--config` |
 | `run-pipeline-note` | Execute a stored pipeline, write outputs back | `--id` |
 | `show-pipeline-note` | Show a pipeline's script, config, content | `--id` |
+| `describe-schema` | Inspect a type, or a global schema summary (read-only) | _(none; `--type` optional)_ |
+| `create-entity` | Create (or `--upsert`) a typed entity | `--type` |
+| `set-attr` | Set/append attributes on an entity | `--id`, `--attr` |
+| `delete-attr` | Remove an attribute value (or all values of a key) | `--id`, `--attr` |
+| `link` | Create a relation between entities | `--relation`, `--role` |
+| `unlink` | Delete a relation between entities | `--relation`, `--role` |
+| `delete-entity` | Delete an entity (`--detach` unlinks first) | `--id` |
+| `query` | Guarded read-only `match … fetch` query | `--read` |
+| `apply` | Run an ordered op-list in one atomic transaction | `--ops` |
+| `apply-recipe` | Run a named recipe (op-list template) atomically | `--recipe` |
 | `export-db` | Export database to timestamped zip | `--database` |
 | `import-db` | Import database from zip | `--zip`, `--database` |
 
