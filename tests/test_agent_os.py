@@ -65,3 +65,66 @@ class TestCreateProfile:
             f'$bearing isa alh-role-bearing (bearer: $person, borne-role: $p); '
             f'delete $bearing; delete $p;'
         )
+
+
+class TestManualEntry:
+    """Tests for add-goal, add-preference, add-life-event, add-topic."""
+
+    TEST_TAG = uuid.uuid4().hex[:8]  # unique per test run for cleanup
+
+    @classmethod
+    def setup_class(cls):
+        """Ensure a profile exists for the operator."""
+        run_cmd("create-profile", "--person", OPERATOR_ID)
+
+    def test_add_goal(self):
+        desc = f"Test goal {self.TEST_TAG}"
+        result = run_cmd(
+            "add-goal", "--person", OPERATOR_ID,
+            "--description", desc,
+            "--priority", "3",
+        )
+        assert result["id"].startswith("aos-goal-")
+        # TypeDB 3.x: deleting a role player cascades to the relation
+        typedb_delete(f'match $g isa aos-goal, has id "{result["id"]}"; delete $g;')
+
+    def test_add_goal_with_target_date(self):
+        desc = f"Test goal with date {self.TEST_TAG}"
+        result = run_cmd(
+            "add-goal", "--person", OPERATOR_ID,
+            "--description", desc,
+            "--priority", "1",
+            "--target-date", "2026-12-31T00:00:00",
+        )
+        assert result["id"].startswith("aos-goal-")
+        typedb_delete(f'match $g isa aos-goal, has id "{result["id"]}"; delete $g;')
+
+    def test_add_preference(self):
+        result = run_cmd(
+            "add-preference", "--person", OPERATOR_ID,
+            "--category", "technical",
+            "--description", f"Prefer TypeDB {self.TEST_TAG}",
+            "--strength", "hard",
+        )
+        assert result["id"].startswith("aos-pref-")
+        typedb_delete(f'match $p isa aos-preference, has id "{result["id"]}"; delete $p;')
+
+    def test_add_life_event(self):
+        result = run_cmd(
+            "add-life-event", "--person", OPERATOR_ID,
+            "--type", "job-start",
+            "--date", "2020-01-15T00:00:00",
+            "--description", f"Started at CZI {self.TEST_TAG}",
+        )
+        assert result["id"].startswith("aos-event-")
+        typedb_delete(f'match $e isa aos-life-event, has id "{result["id"]}"; delete $e;')
+
+    def test_add_topic(self):
+        result = run_cmd(
+            "add-topic", "--person", OPERATOR_ID,
+            "--name", f"Test Topic {self.TEST_TAG}",
+            "--description", "A test topic",
+            "--importance", "high",
+        )
+        assert result["id"].startswith("aos-topic-")
+        typedb_delete(f'match $t isa aos-topic, has id "{result["id"]}"; delete $t;')

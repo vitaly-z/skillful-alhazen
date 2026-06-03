@@ -94,6 +94,19 @@ def _find_profile(driver, person_id: str) -> str | None:
     return results[0]["id"]
 
 
+def _get_profile_id_or_exit(person_id: str) -> str:
+    """Find profile ID or print error and exit."""
+    with get_driver() as driver:
+        profile_id = _find_profile(driver, person_id)
+    if not profile_id:
+        print(json.dumps({
+            "success": False,
+            "error": f"No aos-operator-profile found for person '{person_id}'. Run create-profile first."
+        }))
+        sys.exit(1)
+    return profile_id
+
+
 def cmd_create_profile(args):
     """Create aos-operator-profile for a person (idempotent)."""
     pid = escape_string(args.person)
@@ -130,6 +143,119 @@ def cmd_create_profile(args):
     print(json.dumps({"success": True, "profile_id": profile_id, "created": True}))
 
 
+def cmd_add_goal(args):
+    """Add an aos-goal linked to the operator's profile."""
+    ts = get_timestamp()
+    profile_id = _get_profile_id_or_exit(args.person)
+    gid = generate_id("aos-goal")
+    desc = escape_string(args.description)
+    priority = args.priority
+
+    q = f'''
+    match $profile isa aos-operator-profile, has id "{escape_string(profile_id)}";
+    insert
+      $goal isa aos-goal,
+        has id "{gid}",
+        has description "{desc}",
+        has aos-priority {priority},
+        has aos-goal-status "active",
+        has created-at {ts}'''
+    if args.target_date:
+        q += f',\n        has aos-target-date {args.target_date}'
+    q += ';\n      (profile: $profile, goal: $goal) isa aos-profile-has-goal;'
+
+    with get_driver() as driver:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+            tx.query(q).resolve()
+            tx.commit()
+
+    print(json.dumps({"success": True, "id": gid}))
+
+
+def cmd_add_preference(args):
+    """Add an aos-preference linked to the operator's profile."""
+    ts = get_timestamp()
+    profile_id = _get_profile_id_or_exit(args.person)
+    pid = generate_id("aos-pref")
+    desc = escape_string(args.description)
+    cat = escape_string(args.category)
+    strength = escape_string(args.strength)
+
+    q = f'''
+    match $profile isa aos-operator-profile, has id "{escape_string(profile_id)}";
+    insert
+      $pref isa aos-preference,
+        has id "{pid}",
+        has description "{desc}",
+        has aos-preference-category "{cat}",
+        has aos-preference-strength "{strength}",
+        has created-at {ts};
+      (profile: $profile, preference: $pref) isa aos-profile-has-preference;
+    '''
+
+    with get_driver() as driver:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+            tx.query(q).resolve()
+            tx.commit()
+
+    print(json.dumps({"success": True, "id": pid}))
+
+
+def cmd_add_life_event(args):
+    """Add an aos-life-event linked to the operator's profile."""
+    ts = get_timestamp()
+    profile_id = _get_profile_id_or_exit(args.person)
+    eid = generate_id("aos-event")
+    desc = escape_string(args.description)
+    event_type = escape_string(args.type)
+    event_date = args.date
+
+    q = f'''
+    match $profile isa aos-operator-profile, has id "{escape_string(profile_id)}";
+    insert
+      $event isa aos-life-event,
+        has id "{eid}",
+        has description "{desc}",
+        has aos-event-type "{event_type}",
+        has aos-event-date {event_date},
+        has created-at {ts};
+      (profile: $profile, event: $event) isa aos-profile-has-life-event;
+    '''
+
+    with get_driver() as driver:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+            tx.query(q).resolve()
+            tx.commit()
+
+    print(json.dumps({"success": True, "id": eid}))
+
+
+def cmd_add_topic(args):
+    """Add an aos-topic (global -- discovered from interactions or manually added)."""
+    ts = get_timestamp()
+    tid = generate_id("aos-topic")
+    name = escape_string(args.name)
+    desc = escape_string(args.description or "")
+    importance = escape_string(args.importance)
+
+    q = f'''
+    insert $topic isa aos-topic,
+        has id "{tid}",
+        has name "{name}",
+        has aos-importance "{importance}",
+        has created-at {ts}'''
+    if desc:
+        q += f',\n        has description "{desc}"'
+    q += ";"
+
+    with get_driver() as driver:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+            tx.query(q).resolve()
+            tx.commit()
+
+    print(json.dumps({"success": True, "id": tid}))
+
+
 # ---------------------------------------------------------------------------
 # Argparse
 # ---------------------------------------------------------------------------
@@ -145,6 +271,37 @@ def build_parser():
     p = sub.add_parser("create-profile", help="Create aos-operator-profile for a person (idempotent)")
     p.add_argument("--person", required=True, help="alh-person ID")
 
+    # add-goal
+    p = sub.add_parser("add-goal", help="Add a goal linked to the operator profile")
+    p.add_argument("--person", required=True)
+    p.add_argument("--description", required=True)
+    p.add_argument("--priority", type=int, required=True, choices=[1, 2, 3, 4, 5])
+    p.add_argument("--target-date", help="ISO datetime e.g. 2026-12-31T00:00:00")
+
+    # add-preference
+    p = sub.add_parser("add-preference", help="Add a preference or constraint")
+    p.add_argument("--person", required=True)
+    p.add_argument("--category", required=True,
+                   choices=["work-style", "technical", "communication", "personal"])
+    p.add_argument("--description", required=True)
+    p.add_argument("--strength", required=True, choices=["hard", "soft"])
+
+    # add-life-event
+    p = sub.add_parser("add-life-event", help="Add a career/personal milestone")
+    p.add_argument("--person", required=True)
+    p.add_argument("--type", required=True,
+                   choices=["job-start", "job-end", "publication", "conference",
+                            "project-launch", "education-start", "education-end", "award"])
+    p.add_argument("--date", required=True, help="ISO datetime e.g. 2020-01-15T00:00:00")
+    p.add_argument("--description", required=True)
+
+    # add-topic
+    p = sub.add_parser("add-topic", help="Add a topic/interest area")
+    p.add_argument("--person", required=True)
+    p.add_argument("--name", required=True)
+    p.add_argument("--description")
+    p.add_argument("--importance", default="medium", choices=["high", "medium", "low"])
+
     return parser
 
 
@@ -156,7 +313,11 @@ def main():
         sys.exit(1)
 
     dispatch = {
-        "create-profile": cmd_create_profile,
+        "create-profile":  cmd_create_profile,
+        "add-goal":        cmd_add_goal,
+        "add-preference":  cmd_add_preference,
+        "add-life-event":  cmd_add_life_event,
+        "add-topic":       cmd_add_topic,
     }
 
     fn = dispatch.get(args.command)
