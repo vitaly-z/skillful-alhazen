@@ -309,6 +309,16 @@ attributes does X have", "describe the schema for"
   *before* any write touches the database.
 - **`apply` is atomic.** Every op in one `apply` runs inside **one** write transaction and
   commits once. If any op fails, nothing is written.
+- **TypeDB 3.x relation-match syntax.** MATCH clauses use `$r isa T, links (role: $p)`
+  (TypeDB 3.x) rather than the old `$r (role: $p) isa T` form (TypeDB 2.x). The new form
+  is required for `unlink` and `delete --detach`; the old form causes `[REP1]` when a role
+  name coincides with a type name (e.g. `alh-artifact` is both a role and an entity type).
+- **Role players use concrete types ([INF4] fix).** `link` and `unlink` ops resolve each
+  role player's concrete type via a lightweight concept-API read at compile time. TypeDB
+  3.x raises `[INF4]` when a role player is matched as the abstract root and the role is
+  restricted to a narrower branch. The engine resolves concrete types automatically —
+  callers never need to declare types in `link`/`unlink` ops. `--dry-run` mode uses the
+  abstract root as a best-effort fallback.
 - **Reads are guarded.** `query` requires a bound variable and a `fetch { ... }` clause and
   rejects write keywords — so a read can never crash the server or mutate data.
 

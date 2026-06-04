@@ -403,11 +403,19 @@ def describe_schema(args):
 # ----------------------------------------------------------------------------
 # The engine builds every TypeQL write string itself (agents never author raw
 # writes). All ops in one `apply` run inside ONE write transaction, committed
-# once (atomic). Role players + attribute owners are matched generically as
-# `$x isa alh-identifiable-entity, has id "..."` (the abstract root every entity
-# subtypes), satisfying TypeDB 3.x's requirement that matched relation members
-# carry an `isa`. Cross-op `$bindings` let a `create` mint an id that later ops
+# once (atomic). Cross-op `$bindings` let a `create` mint an id that later ops
 # reference (reads within a write txn see prior uncommitted writes).
+#
+# Role-player typing: `link` and `unlink` ops resolve each role player's
+# *concrete type* at compile time via a lightweight concept-API read
+# (`_concrete_type`). Using the abstract root `alh-identifiable-entity` for
+# all role players triggers TypeDB 3.x [INF4] type-inference failures whenever
+# a relation role is restricted to a narrower branch of the hierarchy (e.g.
+# `alh-representation:alh-artifact` can only be played by `alh-artifact`
+# subtypes, not by `alh-domain-thing`). Concrete types satisfy all role
+# constraints without requiring the caller to know types upfront.
+# In dry-run mode (no live tx) the abstract root is used as a fallback — the
+# output shows intent but is not guaranteed to execute as-is.
 # ============================================================================
 
 
@@ -540,7 +548,7 @@ class GraphEngine:
             return self._q_link(tx, op["relation"], op["_roles"], op["_attrs"],
                                 idempotent=op.get("idempotent", False))
         if kind == "unlink":
-            return self._q_unlink(op["relation"], op["_roles"])
+            return self._q_unlink(tx, op["relation"], op["_roles"])
         if kind == "delete":
             return self._q_delete(tx, op["_id"], detach=op.get("detach", False),
                                   ctype_hint=op.get("type"))
@@ -608,16 +616,39 @@ class GraphEngine:
                     )
         return queries
 
-    def _role_match(self, roles):
+    def _role_match(self, roles, tx=None, relation=None):  # noqa: ARG002
+        """Build the match clause and `links` tuple for a link/unlink op.
+
+        Fix for TypeDB 3.x [INF4] type-inference failure: when a live `tx` is
+        available, resolve each role player's concrete type via the concept API.
+        Using the abstract ROOT causes [INF4] when a role is restricted to a
+        narrower branch (e.g. only alh-artifact subtypes may play
+        alh-representation:alh-artifact). Dry-run (tx=None) falls back to ROOT.
+
+        The callers use TypeDB 3.x relation-match syntax (`$r isa T, links (…)`)
+        instead of the old 2.x `$r (…) isa T` form.  The `links` keyword provides
+        unambiguous role context, so role names that coincide with type names
+        (e.g. `alh-artifact`) do NOT cause [REP1] in this form.
+        """
         match_parts, role_tuple = [], []
         for idx, (role, rid) in enumerate(roles.items()):
             var = f"$p{idx}"
-            match_parts.append(f"{var} isa {self.ROOT}, has id {self._idq(rid)}")
+            if tx is not None:
+                try:
+                    ctype = self._concrete_type(tx, rid)
+                except GraphError:
+                    # Entity was just created in this transaction and is not yet
+                    # visible to _concrete_type (e.g. $binding from a prior create
+                    # op in the same apply). Fall back to ROOT.
+                    ctype = self.ROOT
+            else:
+                ctype = self.ROOT
+            match_parts.append(f"{var} isa {ctype}, has id {self._idq(rid)}")
             role_tuple.append(f"{role}: {var}")
         return "; ".join(match_parts), "(" + ", ".join(role_tuple) + ")"
 
     def _q_link(self, tx, relation, roles, attrs, idempotent=False):
-        match_clause, tuple_clause = self._role_match(roles)
+        match_clause, tuple_clause = self._role_match(roles, tx, relation=relation)
         attrs = dict(attrs)
         if "created-at" in self.sm.owned_attrs(relation) and "created-at" not in attrs:
             attrs["created-at"] = get_timestamp()
@@ -631,14 +662,16 @@ class GraphEngine:
             f"insert {tuple_clause} isa {relation}{attr_clause};"
         )
         if idempotent and tx is not None:
-            check = f"match {match_clause}; $r {tuple_clause} isa {relation};"
+            # TypeDB 3.x relation-match syntax: $r isa T, links (roles)
+            check = f"match {match_clause}; $r isa {relation}, links {tuple_clause};"
             for _ in tx.query(check).resolve():
                 return []  # already linked -> no-op
         return [insert_q]
 
-    def _q_unlink(self, relation, roles):
-        match_clause, tuple_clause = self._role_match(roles)
-        return [f"match {match_clause}; $r {tuple_clause} isa {relation}; delete $r;"]
+    def _q_unlink(self, tx, relation, roles):
+        match_clause, tuple_clause = self._role_match(roles, tx, relation=relation)
+        # TypeDB 3.x: `$r isa T, links (roles)` in MATCH; old `$r (roles) isa T` is 2.x
+        return [f"match {match_clause}; $r isa {relation}, links {tuple_clause}; delete $r;"]
 
     def _q_delete(self, tx, eid, detach=False, ctype_hint=None):
         idq = self._idq(eid)
@@ -647,9 +680,10 @@ class GraphEngine:
             ctype = self._concrete_type(tx, eid) if tx is not None else ctype_hint
             if ctype:
                 for rel, role in self.sm.plays_of(ctype):
+                    # TypeDB 3.x: `$r isa T, links (role: $e)` for relation MATCH
                     queries.append(
                         f"match $e isa {self.ROOT}, has id {idq}; "
-                        f"$r ({role}: $e) isa {rel}; delete $r;"
+                        f"$r isa {rel}, links ({role}: $e); delete $r;"
                     )
         queries.append(f"match $e isa {self.ROOT}, has id {idq}; delete $e;")
         return queries
