@@ -146,8 +146,11 @@ entity alh-identifiable-entity @abstract,
 
 
 # THING - Domain objects (papers, genes, diseases, jobs, agents, etc.)
-# Concrete base type for real-world entities that are NOT information content
+# Concrete base type for real-world entities that are NOT information content.
+# owns content so that any domain thing can carry rich narrative text alongside
+# its structured attributes (e.g. a goal's rationale, a life-event's story).
 entity alh-domain-thing sub alh-identifiable-entity,
+    owns content,
     plays alh-representation:referent,
     plays alh-citation-reference:citing-item,
     plays alh-citation-reference:cited-item;

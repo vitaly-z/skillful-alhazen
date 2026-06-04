@@ -18,9 +18,11 @@ Manual entry commands:
     add-preference     Add a preference or constraint
     add-life-event     Add a career/personal milestone
     add-topic          Add a topic/interest area
+    update-narrative   Set or replace the full-text content on any profile entity
 
 Context retrieval:
     get-context        Get structured context JSON (all or one dimension)
+                       Use --with-content to include full narratives
 
 Environment:
     TYPEDB_HOST       TypeDB server host (default: localhost)
@@ -107,6 +109,38 @@ def _get_profile_id_or_exit(person_id: str) -> str:
     return profile_id
 
 
+def _insert_content(driver, entity_id: str, narrative: str) -> None:
+    """
+    Set or replace the content attribute on an entity.
+    Deletes any existing content value first, then inserts the new one.
+    """
+    eid = escape_string(entity_id)
+    # Delete existing content if present (no-op if absent -- match fails silently via two-tx pattern)
+    try:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+            results = list(tx.query(f'''
+                match $e isa alh-domain-thing, has id "{eid}", has content $old;
+                fetch {{ "has_content": $old }};
+            ''').resolve())
+            if results:
+                tx.query(f'''
+                    match $e isa alh-domain-thing, has id "{eid}", has content $old;
+                    delete has $old of $e;
+                ''').resolve()
+            tx.commit()
+    except Exception:
+        pass  # entity had no content -- that's fine
+
+    # Insert new content
+    escaped = escape_string(narrative)
+    with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
+        tx.query(f'''
+            match $e isa alh-domain-thing, has id "{eid}";
+            insert $e has content "{escaped}";
+        ''').resolve()
+        tx.commit()
+
+
 def cmd_create_profile(args):
     """Create aos-operator-profile for a person (idempotent)."""
     pid = escape_string(args.person)
@@ -168,6 +202,8 @@ def cmd_add_goal(args):
         with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
             tx.query(q).resolve()
             tx.commit()
+        if args.narrative:
+            _insert_content(driver, gid, args.narrative)
 
     print(json.dumps({"success": True, "id": gid}))
 
@@ -197,6 +233,8 @@ def cmd_add_preference(args):
         with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
             tx.query(q).resolve()
             tx.commit()
+        if args.narrative:
+            _insert_content(driver, pid, args.narrative)
 
     print(json.dumps({"success": True, "id": pid}))
 
@@ -226,6 +264,8 @@ def cmd_add_life_event(args):
         with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
             tx.query(q).resolve()
             tx.commit()
+        if args.narrative:
+            _insert_content(driver, eid, args.narrative)
 
     print(json.dumps({"success": True, "id": eid}))
 
@@ -253,13 +293,49 @@ def cmd_add_topic(args):
         with driver.transaction(TYPEDB_DATABASE, TransactionType.WRITE) as tx:
             tx.query(q).resolve()
             tx.commit()
+        if args.narrative:
+            _insert_content(driver, tid, args.narrative)
 
     print(json.dumps({"success": True, "id": tid}))
+
+
+def cmd_update_narrative(args):
+    """Set or replace the full-text content on any profile entity by ID."""
+    with get_driver() as driver:
+        # Verify entity exists
+        eid = escape_string(args.entity_id)
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            results = list(tx.query(f'''
+                match $e isa alh-domain-thing, has id "{eid}";
+                fetch {{ "id": $e.id }};
+            ''').resolve())
+        if not results:
+            print(json.dumps({"success": False, "error": f"No entity found with id '{args.entity_id}'"}))
+            sys.exit(1)
+
+        _insert_content(driver, args.entity_id, args.narrative)
+
+    print(json.dumps({"success": True, "id": args.entity_id}))
+
+
+def _fetch_optional_content(driver, entity_id: str) -> str | None:
+    """Return the content string for an entity, or None if not set."""
+    eid = escape_string(entity_id)
+    try:
+        with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
+            results = list(tx.query(f'''
+                match $e isa alh-domain-thing, has id "{eid}", has content $c;
+                fetch {{ "content": $c }};
+            ''').resolve())
+        return results[0]["content"] if results else None
+    except Exception:
+        return None
 
 
 def cmd_get_context(args):
     """Return structured context JSON for a person."""
     dimension = args.dimension or "all"
+    with_content = getattr(args, "with_content", False)
 
     with get_driver() as driver:
         profile_id = _find_profile(driver, args.person)
@@ -283,11 +359,15 @@ def cmd_get_context(args):
                       "priority": $pri, "status": $status
                     }};
                 ''').resolve())
-            result["goals"] = [
+            goals = [
                 {"id": r["id"], "description": r["description"],
                  "priority": r["priority"], "status": r["status"]}
                 for r in rows
             ]
+            if with_content:
+                for item in goals:
+                    item["content"] = _fetch_optional_content(driver, item["id"])
+            result["goals"] = goals
 
         if dimension in ("preferences", "all"):
             with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
@@ -303,11 +383,15 @@ def cmd_get_context(args):
                       "category": $cat, "strength": $str
                     }};
                 ''').resolve())
-            result["preferences"] = [
+            prefs = [
                 {"id": r["id"], "description": r["description"],
                  "category": r["category"], "strength": r["strength"]}
                 for r in rows
             ]
+            if with_content:
+                for item in prefs:
+                    item["content"] = _fetch_optional_content(driver, item["id"])
+            result["preferences"] = prefs
 
         if dimension in ("career", "all"):
             with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
@@ -322,11 +406,15 @@ def cmd_get_context(args):
                       "type": $etype, "date": $edate
                     }};
                 ''').resolve())
-            result["life_events"] = [
+            events = [
                 {"id": r["id"], "description": r["description"],
                  "type": r["type"], "date": str(r["date"])}
                 for r in rows
             ]
+            if with_content:
+                for item in events:
+                    item["content"] = _fetch_optional_content(driver, item["id"])
+            result["life_events"] = events
 
         if dimension in ("topics", "all"):
             with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
@@ -335,11 +423,14 @@ def cmd_get_context(args):
                           has id $tid, has name $tname, has aos-importance $imp;
                     fetch {{ "id": $tid, "name": $tname, "importance": $imp }};
                 ''').resolve())
-            result["topics"] = [
-                {"id": r["id"], "name": r["name"],
-                 "importance": r["importance"]}
+            topics = [
+                {"id": r["id"], "name": r["name"], "importance": r["importance"]}
                 for r in rows
             ]
+            if with_content:
+                for item in topics:
+                    item["content"] = _fetch_optional_content(driver, item["id"])
+            result["topics"] = topics
 
         if dimension in ("interactions", "all"):
             with driver.transaction(TYPEDB_DATABASE, TransactionType.READ) as tx:
@@ -444,7 +535,10 @@ def build_parser():
     # add-goal
     p = sub.add_parser("add-goal", help="Add a goal linked to the operator profile")
     p.add_argument("--person", required=True)
-    p.add_argument("--description", required=True)
+    p.add_argument("--description", required=True,
+                   help="One-line summary of the goal")
+    p.add_argument("--narrative",
+                   help="Full rich-text narrative: rationale, success criteria, constraints, backstory")
     p.add_argument("--priority", type=int, required=True, choices=[1, 2, 3, 4, 5])
     p.add_argument("--target-date", help="ISO datetime e.g. 2026-12-31T00:00:00")
 
@@ -453,7 +547,11 @@ def build_parser():
     p.add_argument("--person", required=True)
     p.add_argument("--category", required=True,
                    choices=["work-style", "technical", "communication", "personal"])
-    p.add_argument("--description", required=True)
+    p.add_argument("--description", required=True,
+                   help="One-line summary of the preference")
+    p.add_argument("--narrative",
+                   help="Full rich-text narrative: stories of when violated, why it matters, "
+                        "how to probe for it in interviews")
     p.add_argument("--strength", required=True, choices=["hard", "soft"])
 
     # add-life-event
@@ -463,14 +561,30 @@ def build_parser():
                    choices=["job-start", "job-end", "publication", "conference",
                             "project-launch", "education-start", "education-end", "award"])
     p.add_argument("--date", required=True, help="ISO datetime e.g. 2020-01-15T00:00:00")
-    p.add_argument("--description", required=True)
+    p.add_argument("--description", required=True,
+                   help="One-line summary of the event")
+    p.add_argument("--narrative",
+                   help="Full rich-text narrative: what happened, what was built, "
+                        "what was learned, why it ended, lasting impact")
 
     # add-topic
     p = sub.add_parser("add-topic", help="Add a topic/interest area")
     p.add_argument("--person", required=True)
     p.add_argument("--name", required=True)
-    p.add_argument("--description")
+    p.add_argument("--description",
+                   help="One-line summary of the topic area")
+    p.add_argument("--narrative",
+                   help="Full rich-text narrative: depth of expertise, notable projects, "
+                        "how it was acquired, where it is heading")
     p.add_argument("--importance", default="medium", choices=["high", "medium", "low"])
+
+    # update-narrative
+    p = sub.add_parser("update-narrative",
+                       help="Set or replace the full-text content on any profile entity")
+    p.add_argument("--entity-id", required=True,
+                   help="The id of the entity to update (e.g. aos-goal-abc123)")
+    p.add_argument("--narrative", required=True,
+                   help="Full rich-text content to store")
 
     # get-context
     p = sub.add_parser("get-context", help="Get structured context JSON")
@@ -478,6 +592,8 @@ def build_parser():
     p.add_argument("--dimension",
                    choices=["goals", "preferences", "career", "topics", "interactions", "health", "all"],
                    default="all")
+    p.add_argument("--with-content", action="store_true",
+                   help="Include full narrative content for each item")
 
     # show-profile
     p = sub.add_parser("show-profile", help="Show full structured profile")
@@ -498,14 +614,15 @@ def main():
         sys.exit(1)
 
     dispatch = {
-        "create-profile":  cmd_create_profile,
-        "add-goal":        cmd_add_goal,
-        "add-preference":  cmd_add_preference,
-        "add-life-event":  cmd_add_life_event,
-        "add-topic":       cmd_add_topic,
-        "get-context":     cmd_get_context,
-        "show-profile":    cmd_show_profile,
-        "show-ingestion":  cmd_show_ingestion,
+        "create-profile":   cmd_create_profile,
+        "add-goal":         cmd_add_goal,
+        "add-preference":   cmd_add_preference,
+        "add-life-event":   cmd_add_life_event,
+        "add-topic":        cmd_add_topic,
+        "update-narrative": cmd_update_narrative,
+        "get-context":      cmd_get_context,
+        "show-profile":     cmd_show_profile,
+        "show-ingestion":   cmd_show_ingestion,
     }
 
     fn = dispatch.get(args.command)

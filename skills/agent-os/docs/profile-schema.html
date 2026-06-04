@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>agent-os Profile Schema</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      margin: 0;
+      padding: 24px;
+    }
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: #58a6ff;
+      margin-bottom: 4px;
+    }
+    p.subtitle {
+      color: #8b949e;
+      font-size: 0.9rem;
+      margin-top: 0;
+      margin-bottom: 24px;
+    }
+    .mermaid {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 24px;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>agent-os Profile Schema</h1>
+  <p class="subtitle">UML class diagram of the <code>aos-</code> namespace TypeDB types that capture the operator profile.</p>
+  <div class="mermaid">
+classDiagram
+    class `alh-person` {
+        +id : string
+        +name : string
+    }
+
+    class `alh-role-bearing` {
+        &lt;&lt;relation&gt;&gt;
+        bearer: alh-person
+        borne-role: alh-role
+    }
+
+    class `aos-operator-profile` {
+        &lt;&lt;alh-role&gt;&gt;
+        +id : string
+        +description : string
+        +aos-timezone : string
+        +aos-location-preference : string
+        +aos-target-role : string
+    }
+
+    class `aos-goal` {
+        &lt;&lt;alh-domain-thing&gt;&gt;
+        +id : string
+        +description : string
+        +aos-priority : integer
+        +aos-goal-status : string
+        +aos-target-date : datetime
+    }
+
+    class `aos-preference` {
+        &lt;&lt;alh-domain-thing&gt;&gt;
+        +id : string
+        +description : string
+        +aos-preference-category : string
+        +aos-preference-strength : string
+    }
+
+    class `aos-life-event` {
+        &lt;&lt;alh-domain-thing&gt;&gt;
+        +id : string
+        +description : string
+        +aos-event-type : string
+        +aos-event-date : datetime
+    }
+
+    class `aos-topic` {
+        &lt;&lt;alh-domain-thing&gt;&gt;
+        +id : string
+        +name : string
+        +aos-importance : string
+        +aos-last-active : datetime
+    }
+
+    class `aos-health-snapshot` {
+        &lt;&lt;alh-domain-thing&gt;&gt;
+        +id : string
+        +aos-metric-type : string
+        +aos-metric-value : double
+        +aos-metric-unit : string
+        +aos-metric-date : datetime
+        +aos-metric-source : string
+    }
+
+    class `aos-email-thread` {
+        &lt;&lt;alh-interaction&gt;&gt;
+        +aos-gmail-thread-id : string
+        +aos-subject : string
+        +aos-message-count : integer
+    }
+
+    class `aos-calendar-event` {
+        &lt;&lt;alh-interaction&gt;&gt;
+        +aos-calendar-event-id : string
+        +aos-duration-minutes : integer
+        +aos-recurrence : string
+    }
+
+    class `aos-linkedin-message-thread` {
+        &lt;&lt;alh-interaction&gt;&gt;
+        +aos-linkedin-thread-id : string
+        +aos-message-count : integer
+    }
+
+    class `aos-github-artifact` {
+        &lt;&lt;alh-artifact&gt;&gt;
+        +aos-github-repo : string
+        +aos-github-event-type : string
+    }
+
+    class `aos-linkedin-artifact` {
+        &lt;&lt;alh-artifact&gt;&gt;
+        +aos-linkedin-page : string
+    }
+
+    class `aos-healthkit-artifact` {
+        &lt;&lt;alh-artifact&gt;&gt;
+        +aos-healthkit-export-date : datetime
+    }
+
+    class `aos-drive-artifact` {
+        &lt;&lt;alh-artifact&gt;&gt;
+        +aos-drive-file-id : string
+        +aos-drive-mime-type : string
+    }
+
+    class `aos-ingestion-note` {
+        &lt;&lt;alh-note&gt;&gt;
+        +aos-ingestion-source : string
+        +aos-items-processed : integer
+        +aos-watermark : datetime
+    }
+
+    class `aos-skill-topic-bridge` {
+        &lt;&lt;relation&gt;&gt;
+        skill: jhunt-your-skill
+        topic: aos-topic
+    }
+
+    class `aos-interaction-about` {
+        &lt;&lt;relation&gt;&gt;
+        interaction: alh-interaction
+        topic: aos-topic
+    }
+
+    class `aos-topic-evidenced-by` {
+        &lt;&lt;relation&gt;&gt;
+        topic: aos-topic
+        evidence: alh-artifact
+    }
+
+    `alh-person` --> `alh-role-bearing` : bearer
+    `alh-role-bearing` --> `aos-operator-profile` : borne-role
+
+    `aos-operator-profile` --> `aos-goal` : aos-profile-has-goal
+    `aos-operator-profile` --> `aos-preference` : aos-profile-has-preference
+    `aos-operator-profile` --> `aos-life-event` : aos-profile-has-life-event
+
+    `aos-email-thread` --> `aos-interaction-about` : interaction
+    `aos-calendar-event` --> `aos-interaction-about` : interaction
+    `aos-linkedin-message-thread` --> `aos-interaction-about` : interaction
+    `aos-interaction-about` --> `aos-topic` : topic
+
+    `aos-topic` --> `aos-topic-evidenced-by` : topic
+    `aos-github-artifact` --> `aos-topic-evidenced-by` : evidence
+    `aos-linkedin-artifact` --> `aos-topic-evidenced-by` : evidence
+    `aos-drive-artifact` --> `aos-topic-evidenced-by` : evidence
+
+    `aos-skill-topic-bridge` --> `aos-topic` : topic
+  </div>
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+  </script>
+</body>
+</html>
