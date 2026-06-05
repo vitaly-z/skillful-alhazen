@@ -168,6 +168,7 @@ entity alh-role sub alh-domain-thing,
 # COLLECTION - Organized groupings of Things
 # Typed per domain namespace (scilit-corpus, jobhunt-search, apm-case-file, etc.)
 entity alh-collection sub alh-identifiable-entity,
+    owns content,
     owns alh-logical-query,
     owns alh-is-extensional,
     plays alh-collection-membership:collection,
