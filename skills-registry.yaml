@@ -73,7 +73,9 @@ skills:
 - name: literature-trends
   subdir: skills/biomed/literature-trends
 - name: mythras-gm
-  path: skills/mythras-gm
+  git: https://github.com/fourth-wall-gaming/mythras-gm
+  ref: main
+  subdir: skills/mythras-gm
 - name: coach
   subdir: skills/health/coach
   dashboard:
@@ -118,7 +120,7 @@ schema_map:
       depends_on: []
     myth:
       skill: mythras-gm
-      schema: skills/mythras-gm/schema.tql
+      schema: local_skills/mythras-gm/schema.tql
       depends_on: []
     scilit:
       skill: scientific-literature
