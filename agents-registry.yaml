@@ -26,3 +26,5 @@
 agents:
   - name: career-assistant
     path: agents/career-assistant
+  - name: gamemaster
+    path: agents/gamemaster

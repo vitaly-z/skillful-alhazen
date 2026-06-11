@@ -72,6 +72,8 @@ skills:
     color: teal
 - name: literature-trends
   subdir: skills/biomed/literature-trends
+- name: mythras-gm
+  path: skills/mythras-gm
 - name: coach
   subdir: skills/health/coach
   dashboard:
@@ -90,6 +92,7 @@ schema_map:
   - curation-skill-builder
   - dismech-notebook
   - jobhunt
+  - mythras-gm
   - scientific-literature
   - tech-recon
   namespaces:
@@ -112,6 +115,10 @@ schema_map:
     jhunt:
       skill: jobhunt
       schema: local_skills/jobhunt/schema.tql
+      depends_on: []
+    myth:
+      skill: mythras-gm
+      schema: skills/mythras-gm/schema.tql
       depends_on: []
     scilit:
       skill: scientific-literature
