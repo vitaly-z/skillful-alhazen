@@ -946,6 +946,12 @@ lint: ## Run ruff linter
 	uv run ruff format --check .
 	@echo "$(GREEN)✓ Linting completed$(NC)"
 
+.PHONY: validate-plugins
+validate-plugins: ## Check every marketplace plugin against the plugin-architecture bar
+	@echo "$(BLUE)Validating plugins...$(NC)"
+	python3 scripts/validate_plugins.py
+	@echo "$(GREEN)✓ Plugins valid$(NC)"
+
 WIKI_DIR ?= $(HOME)/Documents/Coding/skillful-alhazen.wiki
 
 .PHONY: docs-typedb
