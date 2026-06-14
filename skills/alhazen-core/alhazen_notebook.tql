@@ -67,6 +67,10 @@ attribute alh-operation-parameters, value string;
 attribute alh-value-string, value string;
 attribute alh-evidence-type-attr, value string;
 
+# Analysis pipeline (stored, re-runnable Hamilton workflows)
+attribute alh-pipeline-script, value string;   # full Hamilton module source
+attribute alh-pipeline-config, value string;   # JSON: outputs / inputs / output_attr_map (+ hamilton opts)
+
 # Person identity
 attribute alh-given-name, value string;
 attribute alh-family-name, value string;
@@ -142,8 +146,11 @@ entity alh-identifiable-entity @abstract,
 
 
 # THING - Domain objects (papers, genes, diseases, jobs, agents, etc.)
-# Concrete base type for real-world entities that are NOT information content
+# Concrete base type for real-world entities that are NOT information content.
+# owns content so that any domain thing can carry rich narrative text alongside
+# its structured attributes (e.g. a goal's rationale, a life-event's story).
 entity alh-domain-thing sub alh-identifiable-entity,
+    owns content,
     plays alh-representation:referent,
     plays alh-citation-reference:citing-item,
     plays alh-citation-reference:cited-item;
@@ -161,6 +168,7 @@ entity alh-role sub alh-domain-thing,
 # COLLECTION - Organized groupings of Things
 # Typed per domain namespace (scilit-corpus, jobhunt-search, apm-case-file, etc.)
 entity alh-collection sub alh-identifiable-entity,
+    owns content,
     owns alh-logical-query,
     owns alh-is-extensional,
     plays alh-collection-membership:collection,
@@ -206,6 +214,15 @@ entity alh-note sub alh-information-content-entity,
     plays alh-note-threading:child-note,
     plays alh-evidence-chain:claim,
     plays alh-evidence-chain:evidence;
+
+
+# ANALYSIS-PIPELINE-NOTE - A re-runnable analysis pipeline stored as a note.
+# Stores a Hamilton module source (alh-pipeline-script) + JSON config (alh-pipeline-config);
+# a generic runner reloads & executes the DAG and writes terminal outputs back (default -> content).
+# Linked to its source collections (the input data) via alh-aboutness.
+entity alh-analysis-pipeline-note sub alh-note,
+    owns alh-pipeline-script,
+    owns alh-pipeline-config;
 
 
 # EPISODE - Process account of a work session (4th ICE sibling)

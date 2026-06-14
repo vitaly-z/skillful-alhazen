@@ -135,6 +135,17 @@ make db-init                # Step 2: reload schemas (destructive!)
 # If db-init fails, recover: make db-import ZIP=<latest-export.zip>
 ```
 
+### NEVER Run a Variable-Free Schema Match (crashes TypeDB 3.8)
+
+**A schema match where both sides are concrete type labels with no variable — e.g. `match alh-analysis-pipeline-note sub alh-note;` or `match scilit-faceting-note sub alh-analysis-pipeline-note;` — panics the TypeDB server** (`assertion failed: num_input_variables > 0`, `compiler/executable/match_/planner/plan.rs`). The driver surfaces it as `h2 protocol error: ... broken pipe` and the Docker container actually **restarts**, so it looks like a transient connection drop but is a reproducible crash that takes the DB down.
+
+**Always bind a variable** when checking that a type exists or listing subtypes:
+```python
+# GOOD — returns the type plus its subtypes; read labels via the concept API
+match $t sub alh-analysis-pipeline-note;   # then row.get("t").get_label()
+```
+Do **not** use `fetch { "x": $t.label }` — `label` is a reserved keyword in fetch and also errors.
+
 ### External Skill Fixes Must Go Upstream
 
 External skills (`jobhunt`, `dismech-notebook` etc.) are cloned from other repositories (`https://github.com/sciknow-io/alhazen-skill-examples`, `https://github.com/sciknow-io/alhazen-skill-dismech`). Fixes in `local_skills/` get overwritten by `make skills-update` (which is very, very, very bad). ALWAYS push fixes upstream first. See [`docs/conventions.md`](docs/conventions.md) for details.

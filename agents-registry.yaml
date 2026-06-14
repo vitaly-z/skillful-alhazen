@@ -26,3 +26,7 @@
 agents:
   - name: career-assistant
     path: agents/career-assistant
+  - name: gamemaster
+    git: https://github.com/fourth-wall-gaming/mythras-gm
+    ref: main
+    subdir: agents/gamemaster

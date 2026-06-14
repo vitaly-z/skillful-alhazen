@@ -24,7 +24,6 @@ COPY --from=dashboard-src /src/dashboard/ ./
 
 # No skill dashboards baked in — all arrive via wire-dashboard + rebuild-dashboard
 RUN echo '[]' > public/skills-config.json
-RUN echo '[]' > public/skills-config.json
 RUN echo '{}' > public/namespace-config.json
 
 # Stage 3: Runtime (Node.js + Python + uv)
@@ -50,6 +49,7 @@ COPY --from=deps /app/ ./
 RUN mkdir -p .claude/skills
 
 # Environment
+ENV PROJECT_ROOT=/app
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV TYPEDB_HOST=typedb
 ENV TYPEDB_PORT=1729

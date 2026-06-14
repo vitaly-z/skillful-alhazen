@@ -9,6 +9,15 @@
     "color": "teal"
   },
   {
+    "slug": "scientific-literature",
+    "enabled": true,
+    "name": "Scientific Literature",
+    "description": "Corpora, paper embeddings, and faceting pipelines.",
+    "url_path": "/scientific-literature",
+    "icon": "BookOpen",
+    "color": "cyan"
+  },
+  {
     "slug": "jobhunt",
     "enabled": true,
     "name": "Jobhunt",
@@ -16,15 +25,6 @@
     "url_path": "/jobhunt",
     "icon": "Briefcase",
     "color": "indigo"
-  },
-  {
-    "slug": "single-paper-deep-dive",
-    "enabled": true,
-    "name": "Paper Deep Dive",
-    "description": "Structured analysis of research papers \u2014 claims, evidence tracing, and citation impact.",
-    "url_path": "/dive",
-    "icon": "Microscope",
-    "color": "teal"
   },
   {
     "slug": "tech-recon",
