@@ -1,0 +1,13 @@
+{
+  "name": "agent-os",
+  "version": "0.1.0",
+  "description": "Large-scale operator context dataset -- ingests Gmail, Calendar, GitHub, LinkedIn, Drive, and HealthKit into TypeDB for rich structured personal context.",
+  "license": "MIT",
+  "keywords": ["typedb", "context", "operator", "agentic"],
+  "requires": {
+    "plugins": ["alhazen-core"],
+    "system": {
+      "bins": ["uv", "docker"]
+    }
+  }
+}

@@ -3,5 +3,20 @@
   "version": "1.0.0",
   "description": "Search the web using SearXNG (self-hosted metasearch — no API key needed)",
   "license": "Apache-2.0",
-  "keywords": ["search", "web", "searxng"]
+  "keywords": [
+    "search",
+    "web",
+    "searxng"
+  ],
+  "requires": {
+    "plugins": [
+      "alhazen-core"
+    ],
+    "system": {
+      "bins": [
+        "uv",
+        "docker"
+      ]
+    }
+  }
 }

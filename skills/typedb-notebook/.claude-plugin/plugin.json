@@ -3,5 +3,21 @@
   "version": "1.0.0",
   "description": "Store and retrieve knowledge in the Alhazen TypeDB knowledge graph — remember, recall, organize notes and collections",
   "license": "Apache-2.0",
-  "keywords": ["typedb", "knowledge-graph", "memory", "notes"]
+  "keywords": [
+    "typedb",
+    "knowledge-graph",
+    "memory",
+    "notes"
+  ],
+  "requires": {
+    "plugins": [
+      "alhazen-core"
+    ],
+    "system": {
+      "bins": [
+        "uv",
+        "docker"
+      ]
+    }
+  }
 }
